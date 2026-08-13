@@ -19,4 +19,3 @@ class ChatResponse(BaseModel):
     status: Literal["completed","failed"]
     answer: str
     usage: TokenUsage | None = None
-    
