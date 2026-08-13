@@ -25,7 +25,7 @@ GenerationStageName = Literal[
 
 class GenerationStage(BaseModel):
     stage: GenerationStageName
-    status: GenerationStatus
+    status: GenerationStatus = "pending"
 
     attempt_count: int = Field(default=0,ge =0)
 
@@ -36,5 +36,5 @@ class GenerationStage(BaseModel):
 
 
 class GenerationJob(BaseModel):
-    status: GenerationStatus
+    status: GenerationStatus = "pending"
     stages: list[GenerationStage]

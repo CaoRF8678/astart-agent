@@ -43,7 +43,7 @@ class LearningBriefContent(BaseModel):
 
 class IntakeSession(BaseModel):
 
-    session_id: str = FileExistsError(..., min_length =1)
+    session_id: str = Field(..., min_length =1)
     user_id: str = Field(..., min_length=1)
 
 
