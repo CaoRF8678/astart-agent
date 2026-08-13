@@ -1,0 +1,91 @@
+# ============================================================
+# Astart-Agent
+# Git ignore rules
+# Repository root: astart-agent/
+# ============================================================
+
+# ------------------------------------------------------------
+# Local configuration / secrets
+# ------------------------------------------------------------
+
+# Real local configuration. Never commit this file.
+deploy_starter/config.yml
+
+# Optional local environment files
+.env
+.env.*
+!.env.example
+
+
+# ------------------------------------------------------------
+# Python generated files
+# ------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+
+# ------------------------------------------------------------
+# Virtual environments
+# ------------------------------------------------------------
+
+.venv/
+venv/
+env/
+
+
+# ------------------------------------------------------------
+# Local runtime data
+# ------------------------------------------------------------
+
+# User-uploaded files are runtime data, not source code.
+deploy_starter/data/uploads/
+
+# Logs
+*.log
+logs/
+
+
+# ------------------------------------------------------------
+# Local database files
+# ------------------------------------------------------------
+
+*.db
+*.sqlite
+*.sqlite3
+
+
+# ------------------------------------------------------------
+# IDE / OS
+# ------------------------------------------------------------
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+
+# ------------------------------------------------------------
+# Build artifacts
+# ------------------------------------------------------------
+
+build/
+dist/
+*.egg-info/
+
+
+# ------------------------------------------------------------
+# Current local PostgreSQL scratch file
+# ------------------------------------------------------------
+
+# This file currently only checks current_user/current_database
+# and is not part of the application source.
+deploy_starter/CREATE ROLE astart_app.pgsql

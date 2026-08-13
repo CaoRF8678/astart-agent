@@ -1,0 +1,94 @@
+# ============================================================
+# Astart example configuration
+#
+# 使用方法：
+# 1. 首次拉取项目后，将本文件复制一份并重命名为 config.yml
+# 2. 在本地 config.yml 中填写真实 API Key 等敏感信息
+# 3. config.yml 仅用于本地运行，不提交到 Git
+# ============================================================
+
+
+# ======================
+# app config
+# ======================
+
+APP_NAME: "ModelStudio-Agent Starter"
+
+DEBUG: false
+
+
+# ======================
+# 模型 provider 开关
+# ai_studio | third_party
+#
+# ai_studio:
+#   AI Studio（VPC 内自部署）
+#
+# third_party:
+#   第三方模型服务
+#   使用 OpenAIChatModel + OpenAI 兼容接口
+# ======================
+
+MODEL_PROVIDER: "third_party"
+
+
+# ======================
+# DeepSeek config
+# ======================
+#
+# 本地开发：
+# 请在本地 config.yml 中填写真实 API Key。
+#
+# 注意：
+# exp_config.yml 仅作为公开配置模板，
+# 不允许填写真实密钥。
+# ======================
+
+DASHSCOPE_API_KEY: ""
+
+
+# 模型名称
+
+DASHSCOPE_MODEL_NAME: "deepseek-v4-flash"
+
+DASHSCOPE_MODEL_CODE: "deepseek-v4-flash"
+
+
+# DeepSeek OpenAI 兼容接口
+#
+# 注意：
+# 这里只填写 base_url
+# 不要填写：
+# /chat/completions
+#
+# OpenAI SDK 会自动拼接接口路径
+
+DASHSCOPE_API_URL: "https://api.deepseek.com"
+
+
+# ======================
+# AI Studio config
+# ======================
+#
+# 当前使用 third_party
+# 以下配置暂时不会生效
+# ======================
+
+VPC_OPENAI_API_URL: ""
+
+VPC_OPENAI_API_KEY: ""
+
+VPC_OPENAI_MODEL: ""
+
+VPC_HTTP_PROXY: ""
+
+
+# ======================
+# log config
+# ======================
+
+LOG_LEVEL: "INFO"
+
+LOG_FILE_NAME: "app.log"
+
+START_HOST: "0.0.0.0"
