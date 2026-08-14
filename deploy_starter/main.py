@@ -15,13 +15,15 @@ from core.config import config
 from core.logging_config import LOCAL_IP, logger, success_response
 from core.tracing import set_custome_trace, testObservability
 from agents.friday_agent import create_friday_agent
+from agents.intake_agent import IntakeAnalyzer
 from services.lifecycle import register_lifecycle
 from api.chat import register_chat_routes
 from api.history import register_history_routes
+from api.intake import register_intake_routes
 
 from api.upload import register_upload_routes  #一个负责注册 /upload 路由
 from storage.local import LocalFileStorage #一个负责创建本地 Storage
-
+from services.intake_service import IntakeService
 agent_app = AgentApp(
     app_name=config.get("APP_NAME"),
     app_description="A helpful assistant",
@@ -30,12 +32,20 @@ agent_app = AgentApp(
 file_storage = LocalFileStorage(
      root_dir="data/uploads",
 )
+intake_analyzer = IntakeAnalyzer()
+intake_service = IntakeService(
+    analyzer=intake_analyzer,
+)
 
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
 register_upload_routes(agent_app,storage=file_storage)
 
+register_intake_routes(
+    agent_app,
+    intake_service=intake_service,
+)
 @agent_app.endpoint("/")
 @trace(trace_type=TraceType.LLM, trace_name="llm_func", is_root_span=True)
 def read_root():

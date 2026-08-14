@@ -62,3 +62,47 @@ class IntakeSession(BaseModel):
 
     # 用户最后一次活动时间
     last_activity_at: datetime
+
+class IntakeRequest(BaseModel):
+    message: str = Field(...,min_length=1)
+
+    session_id: str | None = Field(default= None)
+
+    user_id: str = Field(..., min_length=1)
+
+class IntakeResponse(BaseModel):
+    request_id: str
+
+    session_id: str
+
+    status: Literal[
+        "active",
+        "completed",
+    ]
+
+    round_count: int
+
+    message: str
+
+    brief: LearningBriefContent | None = None
+
+IntakeFieldName = Literal[
+    "goal",
+    "application_scenario",
+    "target_outcome",
+    "prior_knowledge",
+    "weekly_hours",
+    "expected_duration_weeks",
+    "focus_areas",
+    "learning_preferences",
+    "constraints",
+]
+
+class IntakeTurnDecision(BaseModel):
+    draft_patch: LearningBriefDraft  #增量修改draft
+
+    question_fields: list[IntakeFieldName]#询问的问题的领域
+
+    questions: list[str] = Field(min_length=2,max_length=6) #agent询问的问题
+
+    ready_to_complete: bool  #是否问完了
