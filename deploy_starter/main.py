@@ -10,6 +10,7 @@ from agentscope_runtime.engine import AgentApp, LocalDeployManager
 from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest
 from agentscope_runtime.engine.tracing import TraceType, trace, TracingUtil
 from opentelemetry import trace as ot_trace
+from database.connection import AsyncSessionLocal
 
 from core.config import config
 from core.logging_config import LOCAL_IP, logger, success_response
@@ -20,10 +21,13 @@ from services.lifecycle import register_lifecycle
 from api.chat import register_chat_routes
 from api.history import register_history_routes
 from api.intake import register_intake_routes
+from api.course_generation import register_generation_routes
 
 from api.upload import register_upload_routes  #一个负责注册 /upload 路由
 from storage.local import LocalFileStorage #一个负责创建本地 Storage
 from services.intake_service import IntakeService
+from services.course_generation_service import CourseGenerationService
+from database.repositories.generation_repository import GenerationRepository
 agent_app = AgentApp(
     app_name=config.get("APP_NAME"),
     app_description="A helpful assistant",
@@ -32,20 +36,41 @@ agent_app = AgentApp(
 file_storage = LocalFileStorage(
      root_dir="data/uploads",
 )
+
 intake_analyzer = IntakeAnalyzer()
 intake_service = IntakeService(
     analyzer=intake_analyzer,
 )
+
+generation_repository = GenerationRepository(
+    session_factory=AsyncSessionLocal,
+)
+
+course_generation_service = (
+    CourseGenerationService(
+        repository=generation_repository,
+    )
+)
+
 
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
 register_upload_routes(agent_app,storage=file_storage)
 
+register_generation_routes(
+    agent_app,
+    service=course_generation_service,
+)
+
 register_intake_routes(
     agent_app,
     intake_service=intake_service,
 )
+
+
+
+
 @agent_app.endpoint("/")
 @trace(trace_type=TraceType.LLM, trace_name="llm_func", is_root_span=True)
 def read_root():
