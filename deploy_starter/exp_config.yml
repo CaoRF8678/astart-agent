@@ -92,3 +92,9 @@ LOG_LEVEL: "INFO"
 LOG_FILE_NAME: "app.log"
 
 START_HOST: "0.0.0.0"
+
+# ======================
+# PostgreSQL config
+# ======================
+
+DATABASE_URL: ""
