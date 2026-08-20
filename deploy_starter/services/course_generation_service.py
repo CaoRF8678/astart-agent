@@ -143,8 +143,6 @@ class CourseGenerationService:
                     generation_id=generation_id,
                 )
             )
-        # 4. TODO：
-        # 把 job 转成 CourseGenerationStatusResponse
         return CourseGenerationStatusResponse(
             request_id=request_id,
             generation_id=job.generation_id,

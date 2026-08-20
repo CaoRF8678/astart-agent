@@ -65,8 +65,3 @@ class GenerationStageModel(Base):
     error_message: Mapped[str |None] = mapped_column(
         Text,
     )
-    # TODO：
-    # started_at
-    # finished_at
-    # error_code
-    # error_message
