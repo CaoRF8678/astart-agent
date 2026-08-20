@@ -10,6 +10,9 @@ from database.repositories.generation_repository import (
     GenerationRepository,
 )
 
+from database.repositories.course_repository import (
+    CourseRepository,
+)
 from stage.base import StructuredStageRunner
 
 from workflows.course_generation_workflow import (
@@ -38,6 +41,9 @@ async def main() -> None:
     # 都通过它创建数据库 Session。
 
     repository = GenerationRepository(
+        session_factory=AsyncSessionLocal,
+    )
+    course_repository = CourseRepository(
         session_factory=AsyncSessionLocal,
     )
     # ==========================================
@@ -70,6 +76,7 @@ async def main() -> None:
 
     workflow = CourseGenerationWorkflow(
         repository=repository,
+        course_repository= course_repository,
         stage_runner=stage_runner,
     )
     # ==========================================

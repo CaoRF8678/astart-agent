@@ -22,6 +22,12 @@ CancelResult = Literal[
     "already_failed",
     "already_cancelled",
 ]
+STAGE_ORDER = {
+    "research": 0,
+    "outline": 1,
+    "critique": 2,
+    "revision": 3,
+}
 STAGE_SNAPSHOT_FIELDS = {
     "research": "research_result",
     "outline": "outline_v1",
@@ -144,10 +150,15 @@ class GenerationRepository:
 
             stage_result = await session.execute(stage_stmt)
 
-            stage_models = (
+            stage_models = list(
                 stage_result.scalars().all()
             )
-
+            stage_models.sort(
+                key = lambda stage: STAGE_ORDER.get(
+                    stage.stage,
+                    999,
+                )
+            )
             # 3. ORM Model → Pydantic Schema
             stages = [
                 GenerationStage(

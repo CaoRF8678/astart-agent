@@ -6,6 +6,7 @@ from schemas.generation import (
 )
 from schemas.course import CourseOutline
 from database.repositories.generation_repository import GenerationRepository
+from database.repositories.course_repository import CourseRepository
 from stage.research import run_research
 from stage.outline import run_outline
 from stage.critique import run_critique
@@ -26,9 +27,11 @@ class CourseGenerationWorkflow:
         self,
         *,
         repository:GenerationRepository,
+        course_repository: CourseRepository,
         stage_runner,
     ):
         self.repository = repository
+        self.course_repository = course_repository
         self.stage_runner = stage_runner
 
     async def run(
@@ -319,7 +322,27 @@ class CourseGenerationWorkflow:
                 generation_id= generation_id,
             )
             return
-        
+        # =========================
+        # 9. Create Course
+        # =========================
+        try:
+            await self.course_repository.create_from_outline(
+                generation_id=generation_id,
+                user_id=job.user_id,
+                outline=revision_result,
+            )
+
+        except Exception as exc:
+            error_code = type(exc).__name__
+            error_message = str(exc)
+
+            await self.repository.mark_job_failed(
+                generation_id=generation_id,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            raise
+ 
         # =========================
         # 9. Job Completed
         # =========================

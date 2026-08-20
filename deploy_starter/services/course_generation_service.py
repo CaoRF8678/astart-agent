@@ -22,8 +22,13 @@ class CourseGenerationServiceError(Exception):
 
 class CourseGenerationService:
 
-    def __init__(self, repository):
+    def __init__(
+            self,
+            repository,
+            course_repository,
+            ):
         self.repository = repository
+        self.course_repository  = course_repository
 
 
     async def create_generation(
@@ -129,13 +134,22 @@ class CourseGenerationService:
             ),
             None,
         )
+        course_id = None
 
+        if job.status == "completed":
+            course_id = (
+                await self.course_repository
+                .get_course_id_by_generation(
+                    generation_id=generation_id,
+                )
+            )
         # 4. TODO：
         # 把 job 转成 CourseGenerationStatusResponse
         return CourseGenerationStatusResponse(
             request_id=request_id,
             generation_id=job.generation_id,
             status=job.status,
+            course_id= course_id,
             current_stage=current_stage,
             stages=job.stages,
             created_at=job.created_at,

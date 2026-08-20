@@ -252,6 +252,7 @@ class CourseGenerationStatusResponse(BaseModel):
     current_stage: GenerationStageName | None
 
     stages: list[GenerationStage]
+    course_id: str | None = None
 
     created_at: datetime
     started_at: datetime | None = None

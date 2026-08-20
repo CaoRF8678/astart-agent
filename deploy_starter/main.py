@@ -22,12 +22,15 @@ from api.chat import register_chat_routes
 from api.history import register_history_routes
 from api.intake import register_intake_routes
 from api.course_generation import register_generation_routes
+from api.course import register_course_routes
 
 from api.upload import register_upload_routes  #一个负责注册 /upload 路由
 from storage.local import LocalFileStorage #一个负责创建本地 Storage
 from services.intake_service import IntakeService
 from services.course_generation_service import CourseGenerationService
+from services.course_service import CourseService
 from database.repositories.generation_repository import GenerationRepository
+from database.repositories.course_repository import CourseRepository
 agent_app = AgentApp(
     app_name=config.get("APP_NAME"),
     app_description="A helpful assistant",
@@ -46,12 +49,19 @@ generation_repository = GenerationRepository(
     session_factory=AsyncSessionLocal,
 )
 
+course_repository = CourseRepository(
+    session_factory=AsyncSessionLocal,
+)
+
 course_generation_service = (
     CourseGenerationService(
         repository=generation_repository,
+        course_repository=course_repository,
     )
 )
-
+course_service = CourseService(
+    repository=course_repository,
+)
 
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
@@ -68,7 +78,10 @@ register_intake_routes(
     intake_service=intake_service,
 )
 
-
+register_course_routes(
+    agent_app,
+    service=course_service,
+)
 
 
 @agent_app.endpoint("/")
