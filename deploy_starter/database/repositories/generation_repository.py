@@ -54,7 +54,6 @@ class GenerationRepository:
                     learning_brief = brief.model_dump(
                         mode = "json"
                     ),
-                    #TODO
                 )
 
                 session.add(job)
