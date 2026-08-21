@@ -70,6 +70,8 @@ class LearningSourceRepository:
                         locator=(
                             segment.locator
                         ),
+                        embedding = segment.embedding,
+                        embedding_model = segment.embedding_model,
                     )
                     for segment in segments
                 ]
