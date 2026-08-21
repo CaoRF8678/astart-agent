@@ -17,15 +17,16 @@ from schemas.common import (
 
 from schemas.upload import UploadResponse
 
-from services.upload_service import (
-    MAX_FILE_SIZE,
-    UploadServiceError,
-    upload_file,
-)
 
 from storage.base import FileStorage
 
-
+from services.upload_service import (
+    MAX_FILE_SIZE,
+    UploadServiceError,
+    list_learning_materials,
+    upload_file,
+    upload_learning_source,
+)
  
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,53 @@ logger = logging.getLogger(__name__)
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 #分块读取上传的内容
+
+UPLOAD_ERROR_STATUS = {
+    "INVALID_FILENAME": 400,
+    "INVALID_USER_ID": 400,
+    "EMPTY_FILE": 400,
+
+    "FILE_TOO_LARGE": 413,
+
+    "UNSUPPORTED_FILE_TYPE": 415,
+
+    "INVALID_FILE_CONTENT": 422,
+    "DOCUMENT_PARSE_FAILED": 422,
+
+    "SESSION_NOT_FOUND": 404,
+    "COURSE_NOT_FOUND": 404,
+
+    "SERVICE_NOT_READY": 503,
+
+    "FILE_STORAGE_FAILED": 500,
+}
+
+def _upload_error_response(
+    *,
+    request_id: str,
+    exc: UploadServiceError,
+) -> JSONResponse:
+
+    error_response = ErrorResponse(
+        request_id=request_id,
+        error=ErrorDetail(
+            code=exc.code,
+            message=exc.message,
+        ),
+    )
+
+    return JSONResponse(
+        status_code=(
+            UPLOAD_ERROR_STATUS.get(
+                exc.code,
+                500,
+            )
+        ),
+        content=error_response.model_dump(
+            mode="json"
+        ),
+    )
+
 async def read_upload_with_limit(
     file: UploadFile,
 ) -> bytes:
@@ -145,40 +193,9 @@ def register_upload_routes(
 
 
         except UploadServiceError as exc:
-
-            status_code = {
-                "INVALID_FILENAME": 400,
-                "INVALID_USER_ID": 400,
-                "EMPTY_FILE": 400,
-
-                "FILE_TOO_LARGE": 413,
-
-                "UNSUPPORTED_FILE_TYPE": 415,
-
-                "INVALID_FILE_CONTENT": 422,
-
-                "SESSION_NOT_FOUND": 404,
-
-                "SERVICE_NOT_READY": 503,
-
-                "FILE_STORAGE_FAILED": 500,
-
-            }.get(
-                exc.code,
-                500,
-            )
-
-            error_response = ErrorResponse(
+            return _upload_error_response(
                 request_id=request_id,
-                error=ErrorDetail(
-                    code=exc.code,
-                    message=exc.message,
-                ),
-            )
-
-            return JSONResponse(
-                status_code=status_code,
-                content=error_response.model_dump(mode="json"),
+                exc = exc,
             )
 
 
@@ -207,3 +224,157 @@ def register_upload_routes(
 
             # 无论成功还是失败，都关闭 UploadFile
            await file.close()
+
+
+def register_learning_material_routes(
+    agent_app,
+    *,
+    storage: FileStorage,
+    course_repository,
+    learning_source_repository,
+) -> None:
+    @agent_app.endpoint(
+        "/courses/{course_id}/materials",
+        methods=["POST"],
+    )
+    async def upload_learning_material(
+        course_id: str,
+        request: Request,
+        file: UploadFile = File(...),
+        user_id: str = Form(
+            ...,
+            min_length=1,
+        ),
+    ):
+        request_id = (
+            f"req_{uuid.uuid4()}"
+        )
+
+        try:
+            data = await read_upload_with_limit(
+                file
+            )
+
+            response = await upload_learning_source(
+                storage=storage,
+                course_repository=(
+                    course_repository
+                ),
+                learning_source_repository=(
+                    learning_source_repository
+                ),
+                course_id=course_id,
+                filename=file.filename,
+                content_type=file.content_type,
+                data=data,
+                user_id=user_id,
+                request_id=request_id,
+            )
+
+            return JSONResponse(
+                status_code=201,
+                content=response.model_dump(
+                    mode="json"
+                ),
+            )
+
+        except UploadServiceError as exc:
+            return _upload_error_response(
+                request_id=request_id,
+                exc=exc,
+            )
+
+        except Exception:
+            logger.exception(
+                "Unhandled learning material "
+                "upload error, request_id=%s",
+                request_id,
+            )
+
+            error_response = ErrorResponse(
+                request_id=request_id,
+                error=ErrorDetail(
+                    code="INTERNAL_SERVER_ERROR",
+                    message=(
+                        "An unexpected server "
+                        "error occurred."
+                    ),
+                ),
+            )
+
+            return JSONResponse(
+                status_code=500,
+                content=(
+                    error_response.model_dump(
+                        mode="json"
+                    )
+                ),
+            )
+
+        finally:
+            await file.close()
+
+    @agent_app.endpoint(
+        "/courses/{course_id}/materials",
+        methods=["GET"],
+    )
+    async def list_course_materials(
+        course_id: str,
+        user_id: str,
+    ):
+        request_id = (
+            f"req_{uuid.uuid4()}"
+        )
+
+        try:
+            response = await list_learning_materials(
+                course_repository=(
+                    course_repository
+                ),
+                learning_source_repository=(
+                    learning_source_repository
+                ),
+                course_id=course_id,
+                user_id=user_id,
+                request_id=request_id,
+            )
+
+            return JSONResponse(
+                status_code=200,
+                content=response.model_dump(
+                    mode="json"
+                ),
+            )
+
+        except UploadServiceError as exc:
+            return _upload_error_response(
+                request_id=request_id,
+                exc=exc,
+            )
+
+        except Exception:
+            logger.exception(
+                "Unhandled material list error, "
+                "request_id=%s",
+                request_id,
+            )
+
+            error_response = ErrorResponse(
+                request_id=request_id,
+                error=ErrorDetail(
+                    code="INTERNAL_SERVER_ERROR",
+                    message=(
+                        "An unexpected server "
+                        "error occurred."
+                    ),
+                ),
+            )
+
+            return JSONResponse(
+                status_code=500,
+                content=(
+                    error_response.model_dump(
+                        mode="json"
+                    )
+                ),
+            )

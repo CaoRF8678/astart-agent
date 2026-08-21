@@ -9,8 +9,6 @@ from core.config import config
 
 
 DATABASE_URL = (
-    # TODO：
-    # env 优先，然后 config
     os.getenv("DATABASE_URL")
     or config.get("DATABASE_URL")
 )

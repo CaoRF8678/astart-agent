@@ -2,6 +2,8 @@ import hashlib
 import io
 import uuid
 import zipfile
+import asyncio
+import logging
 
 from pathlib import Path
 
@@ -11,6 +13,19 @@ from storage.base import (
     FileStorageError,
 )
 
+from ingestion.errors import (
+    DocumentParseError,
+)
+from ingestion.parsers import get_parser
+from ingestion.types import ParsedBlock
+
+from schemas.learning_source import (
+    LearningMaterialListResponse,
+    LearningMaterialUploadResponse,
+    SourceSegment,
+)
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_FILE_TYPES = {
     ".txt": {
@@ -32,6 +47,12 @@ ALLOWED_FILE_TYPES = {
             "wordprocessingml.document"
         ),
     },
+    ".pptx": {
+        (
+            "application/vnd.openxmlformats-officedocument."
+            "presentationml.presentation"
+        ),
+    },
 }
 
 
@@ -48,13 +69,81 @@ MAX_FILE_SIZE = (
 MAX_FILENAME_LENGTH = 255
 
 
-MAX_DOCX_ENTRIES = 5000
+MAX_OPENXML_ENTRIES = 5000
 
-
-MAX_DOCX_UNCOMPRESSED_SIZE = (
+MAX_OPENXML_UNCOMPRESSED_SIZE = (
     200 * 1024 * 1024
 )
 
+
+def _validate_openxml_package(
+    data: bytes,
+    *,
+    required_entries: set[str],
+    document_name: str,
+) -> None:
+    try:
+        with zipfile.ZipFile(
+            io.BytesIO(data),
+            mode="r",
+        ) as archive:
+
+            entries = archive.infolist()
+
+            if (
+                len(entries)
+                > MAX_OPENXML_ENTRIES
+            ):
+                raise UploadServiceError(
+                    code="INVALID_FILE_CONTENT",
+                    message=(
+                        f"The {document_name} file "
+                        "contains too many "
+                        "archive entries."
+                    ),
+                )
+
+            total_uncompressed_size = sum(
+                entry.file_size
+                for entry in entries
+            )
+
+            if (
+                total_uncompressed_size
+                > MAX_OPENXML_UNCOMPRESSED_SIZE
+            ):
+                raise UploadServiceError(
+                    code="INVALID_FILE_CONTENT",
+                    message=(
+                        f"The {document_name} archive "
+                        "is unreasonably large."
+                    ),
+                )
+
+            names = {
+                entry.filename
+                for entry in entries
+            }
+
+            if not required_entries.issubset(
+                names
+            ):
+                raise UploadServiceError(
+                    code="INVALID_FILE_CONTENT",
+                    message=(
+                        "The uploaded file is not a "
+                        f"valid {document_name} document."
+                    ),
+                )
+
+    except zipfile.BadZipFile as exc:
+        raise UploadServiceError(
+            code="INVALID_FILE_CONTENT",
+            message=(
+                "The uploaded file is not a "
+                f"valid {document_name} document."
+            ),
+        ) from exc
 
 class UploadServiceError(Exception):
     """
@@ -231,84 +320,29 @@ def _validate_text(
             ),
         ) from exc
 
-
 def _validate_docx(
     data: bytes,
 ) -> None:
-    """
-    Validate DOCX as an Open XML ZIP container.
+    _validate_openxml_package(
+        data,
+        required_entries={
+            "[Content_Types].xml",
+            "word/document.xml",
+        },
+        document_name="DOCX",
+    )
 
-    This does not extract the archive.
-    """
-
-    try:
-        with zipfile.ZipFile(
-            io.BytesIO(data),
-            mode="r",
-        ) as archive:
-
-            entries = (
-                archive.infolist()
-            )
-
-            if (
-                len(entries)
-                > MAX_DOCX_ENTRIES
-            ):
-                raise UploadServiceError(
-                    code="INVALID_FILE_CONTENT",
-                    message=(
-                        "The DOCX file contains "
-                        "too many archive entries."
-                    ),
-                )
-
-            total_uncompressed_size = sum(
-                entry.file_size
-                for entry in entries
-            )
-
-            if (
-                total_uncompressed_size
-                > MAX_DOCX_UNCOMPRESSED_SIZE
-            ):
-                raise UploadServiceError(
-                    code="INVALID_FILE_CONTENT",
-                    message=(
-                        "The DOCX archive is "
-                        "unreasonably large."
-                    ),
-                )
-
-            names = {
-                entry.filename
-                for entry in entries
-            }
-
-            required_entries = {
-                "[Content_Types].xml",
-                "word/document.xml",
-            }
-
-            if not required_entries.issubset(
-                names
-            ):
-                raise UploadServiceError(
-                    code="INVALID_FILE_CONTENT",
-                    message=(
-                        "The uploaded file is "
-                        "not a valid DOCX document."
-                    ),
-                )
-
-    except zipfile.BadZipFile as exc:
-        raise UploadServiceError(
-            code="INVALID_FILE_CONTENT",
-            message=(
-                "The uploaded file is "
-                "not a valid DOCX document."
-            ),
-        ) from exc
+def _validate_pptx(
+    data: bytes,
+) -> None:
+    _validate_openxml_package(
+        data,
+        required_entries={
+            "[Content_Types].xml",
+            "ppt/presentation.xml",
+        },
+        document_name="PPTX",
+    )
 
 
 def validate_file_content(
@@ -359,6 +393,8 @@ def validate_file_content(
         _validate_docx(
             data
         )
+    elif suffix == ".pptx":
+        _validate_pptx(data)
 
     else:
         # Defensive fallback.
@@ -527,4 +563,206 @@ async def upload_file(
         sha256=sha256_hash,
         session_id=normalized_session_id,
         status="uploaded",
+    )
+
+def _build_segments(
+    *,
+    file_id: str,
+    blocks: list[ParsedBlock],
+) -> list[SourceSegment]:
+
+    return [
+        SourceSegment(
+            segment_id=(
+                f"seg_{uuid.uuid4().hex}"
+            ),
+            file_id=file_id,
+            content=block.content,
+            segment_order=segment_order,
+            locator=block.locator,
+        )
+        for segment_order, block
+        in enumerate(blocks)
+    ]
+
+async def upload_learning_source(
+    *,
+    storage: FileStorage,
+    course_repository,
+    learning_source_repository,
+    course_id: str,
+    filename: str | None,
+    content_type: str | None,
+    data: bytes,
+    user_id: str,
+    request_id: str,
+) -> LearningMaterialUploadResponse:
+
+    normalized_user_id = (
+        user_id.strip()
+    )
+
+    if not normalized_user_id:
+        raise UploadServiceError(
+            code="INVALID_USER_ID",
+            message="User ID must not be empty.",
+        )
+
+    course = await (
+        course_repository
+        .get_course_for_user(
+            course_id=course_id,
+            user_id=normalized_user_id,
+        )
+    )
+
+    if course is None:
+        raise UploadServiceError(
+            code="COURSE_NOT_FOUND",
+            message="Course not found.",
+        )
+
+    safe_filename = sanitize_filename(
+        filename
+    )
+
+    suffix = validate_file_metadata(
+        filename=safe_filename,
+        content_type=content_type,
+    )
+
+    size, sha256_hash = (
+        validate_file_content(
+            data=data,
+            suffix=suffix,
+        )
+    )
+
+    normalized_content_type = (
+        content_type
+        or "application/octet-stream"
+    ).lower()
+
+    try:
+        parser = get_parser(suffix)
+
+        blocks = await asyncio.to_thread(
+            parser.parse,
+            data,
+        )
+
+    except DocumentParseError as exc:
+        raise UploadServiceError(
+            code="DOCUMENT_PARSE_FAILED",
+            message=str(exc),
+        ) from exc
+
+    file_id = (
+        f"file_{uuid.uuid4().hex}"
+    )
+
+    segments = _build_segments(
+        file_id=file_id,
+        blocks=blocks,
+    )
+
+    try:
+        storage_key = await storage.save(
+            file_id=file_id,
+            filename=safe_filename,
+            data=data,
+        )
+
+    except FileStorageError as exc:
+        raise UploadServiceError(
+            code="FILE_STORAGE_FAILED",
+            message=(
+                "Failed to store "
+                "the uploaded file."
+            ),
+        ) from exc
+
+    try:
+        source = await (
+            learning_source_repository
+            .create_learning_source_with_segments(
+                file_id=file_id,
+                course_id=course_id,
+                filename=safe_filename,
+                content_type=(
+                    normalized_content_type
+                ),
+                size=size,
+                sha256=sha256_hash,
+                storage_key=storage_key,
+                segments=segments,
+            )
+        )
+
+    except Exception:
+        try:
+            await storage.delete(
+                storage_key
+            )
+        except FileStorageError:
+            logger.exception(
+                "Failed to clean up stored file: %s",
+                storage_key,
+            )
+
+        raise
+
+    return LearningMaterialUploadResponse(
+        request_id=request_id,
+        course_id=source.course_id,
+        file_id=source.file_id,
+        filename=source.filename,
+        content_type=source.content_type,
+        size=source.size,
+        created_at=source.created_at,
+    )
+
+async def list_learning_materials(
+    *,
+    course_repository,
+    learning_source_repository,
+    course_id: str,
+    user_id: str,
+    request_id: str,
+) -> LearningMaterialListResponse:
+
+    normalized_user_id = (
+        user_id.strip()
+    )
+
+    if not normalized_user_id:
+        raise UploadServiceError(
+            code="INVALID_USER_ID",
+            message="User ID must not be empty.",
+        )
+
+    course = await (
+        course_repository
+        .get_course_for_user(
+            course_id=course_id,
+            user_id=normalized_user_id,
+        )
+    )
+
+    if course is None:
+        raise UploadServiceError(
+            code="COURSE_NOT_FOUND",
+            message="Course not found.",
+        )
+
+    materials = await (
+        learning_source_repository
+        .list_learning_sources_for_course(
+            course_id=course_id,
+        )
+    )
+
+    return LearningMaterialListResponse(
+        request_id=request_id,
+        materials=materials,
     )

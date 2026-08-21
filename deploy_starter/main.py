@@ -24,13 +24,21 @@ from api.intake import register_intake_routes
 from api.course_generation import register_generation_routes
 from api.course import register_course_routes
 
-from api.upload import register_upload_routes  #一个负责注册 /upload 路由
+  #一个负责注册 /upload 路由
+from api.upload import (
+    register_learning_material_routes,
+    register_upload_routes,
+)
+
 from storage.local import LocalFileStorage #一个负责创建本地 Storage
 from services.intake_service import IntakeService
 from services.course_generation_service import CourseGenerationService
 from services.course_service import CourseService
 from database.repositories.generation_repository import GenerationRepository
 from database.repositories.course_repository import CourseRepository
+from database.repositories.learning_source_repository import (
+    LearningSourceRepository,
+)
 agent_app = AgentApp(
     app_name=config.get("APP_NAME"),
     app_description="A helpful assistant",
@@ -53,6 +61,12 @@ course_repository = CourseRepository(
     session_factory=AsyncSessionLocal,
 )
 
+learning_source_repository = (
+    LearningSourceRepository(
+        session_factory=AsyncSessionLocal,
+    )
+)
+
 course_generation_service = (
     CourseGenerationService(
         repository=generation_repository,
@@ -67,7 +81,14 @@ register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
 register_upload_routes(agent_app,storage=file_storage)
-
+register_learning_material_routes(
+    agent_app,
+    storage=file_storage,
+    course_repository=course_repository,
+    learning_source_repository=(
+        learning_source_repository
+    ),
+)
 register_generation_routes(
     agent_app,
     service=course_generation_service,
