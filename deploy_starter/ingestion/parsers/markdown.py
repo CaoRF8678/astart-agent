@@ -182,7 +182,32 @@ class MarkdownParser(DocumentParser):
 
                 index += 1
                 continue
+            if token.type == "table_open":
+                flush_text()
 
+                table_text, next_index = (
+                    self._extract_table(
+                        tokens,
+                        start_index=index,
+                    )
+                )
+
+                if table_text:
+                    for table_part in (
+                        self._split_long_table(
+                            table_text
+                        )
+                    ):
+                        block = self._make_block(
+                            content=table_part,
+                            locator=current_locator(),
+                        )
+
+                        if block is not None:
+                            parsed.append(block)
+
+                index = next_index
+                continue
             if token.type == "inline":
                 content = normalize_text(
                     token.content
@@ -254,6 +279,104 @@ class MarkdownParser(DocumentParser):
                 )
                 if fenced
                 else body
+            )
+
+        return parts
+
+    @staticmethod
+    def _extract_table(
+        tokens,
+        *,
+        start_index: int,
+    ) -> tuple[str, int]:
+        rows: list[str] = []
+        current_row: list[str] = []
+
+        index = start_index + 1
+
+        while index < len(tokens):
+            token = tokens[index]
+
+            if token.type == "table_close":
+                break
+
+            if token.type == "tr_open":
+                current_row = []
+
+            elif token.type == "inline":
+                cell_text = normalize_text(
+                    token.content
+                )
+
+                if cell_text:
+                    current_row.append(
+                        cell_text
+                    )
+
+            elif token.type == "tr_close":
+                if current_row:
+                    rows.append(
+                        " | ".join(current_row)
+                    )
+
+                current_row = []
+
+            index += 1
+
+        return (
+            "\n".join(rows),
+            index + 1,
+        )
+    @staticmethod
+    def _split_long_table(
+        content: str,
+    ) -> list[str]:
+        if len(content) <= DEFAULT_MAX_CHARS:
+            return [content]
+
+        rows = [
+            row
+            for row in content.splitlines()
+            if row.strip()
+        ]
+
+        parts: list[str] = []
+        current: list[str] = []
+        current_length = 0
+
+        for row in rows:
+            row_length = len(row)
+
+            separator_length = (
+                1 if current else 0
+            )
+
+            if (
+                current
+                and current_length
+                + separator_length
+                + row_length
+                > DEFAULT_MAX_CHARS
+            ):
+                parts.append(
+                    "\n".join(current)
+                )
+
+                current = []
+                current_length = 0
+
+            if current:
+                current_length += (
+                    1 + row_length
+                )
+            else:
+                current_length = row_length
+
+            current.append(row)
+
+        if current:
+            parts.append(
+                "\n".join(current)
             )
 
         return parts

@@ -17,11 +17,6 @@ from schemas.common import (
 
 from schemas.upload import UploadResponse
 
-from services.upload_service import (
-    MAX_FILE_SIZE,
-    UploadServiceError,
-    upload_file,
-)
 
 from storage.base import FileStorage
 
