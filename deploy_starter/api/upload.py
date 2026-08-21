@@ -49,7 +49,7 @@ UPLOAD_ERROR_STATUS = {
 
     "SESSION_NOT_FOUND": 404,
     "COURSE_NOT_FOUND": 404,
-
+    "EMBEDDING_FAILED": 502,
     "SERVICE_NOT_READY": 503,
 
     "FILE_STORAGE_FAILED": 500,
@@ -232,6 +232,7 @@ def register_learning_material_routes(
     storage: FileStorage,
     course_repository,
     learning_source_repository,
+    embedding_service,
 ) -> None:
     @agent_app.endpoint(
         "/courses/{course_id}/materials",
@@ -263,6 +264,7 @@ def register_learning_material_routes(
                 learning_source_repository=(
                     learning_source_repository
                 ),
+                embedding_service  = embedding_service,
                 course_id=course_id,
                 filename=file.filename,
                 content_type=file.content_type,

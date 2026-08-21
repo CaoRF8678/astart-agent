@@ -25,6 +25,11 @@ from schemas.learning_source import (
     SourceSegment,
 )
 
+from services.embedding_service import (
+    EmbeddingServiceError,
+    EmbeddingService,
+)
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_FILE_TYPES = {
@@ -590,6 +595,7 @@ async def upload_learning_source(
     storage: FileStorage,
     course_repository,
     learning_source_repository,
+    embedding_service: EmbeddingService,
     course_id: str,
     filename: str | None,
     content_type: str | None,
@@ -665,7 +671,31 @@ async def upload_learning_source(
         file_id=file_id,
         blocks=blocks,
     )
+    try:
+        vectors = await embedding_service.embed_documents(
+            [
+                segment.content
+                for segment in segments
+            ]
+        )
+    except EmbeddingServiceError as exc:
+        raise UploadServiceError(
+            code="EMBEDDING_FAILED",
+            message=exc.message,
+        ) from exc
 
+    segments = [
+        segment.model_copy(
+            update={
+                "embedding": vector,
+                "embedding_model": embedding_service.model_name,
+            }
+        )
+        for segment, vector in zip(
+            segments,
+            vectors,
+        )
+    ]
     try:
         storage_key = await storage.save(
             file_id=file_id,

@@ -34,6 +34,9 @@ from storage.local import LocalFileStorage #一个负责创建本地 Storage
 from services.intake_service import IntakeService
 from services.course_generation_service import CourseGenerationService
 from services.course_service import CourseService
+from services.embedding_service import (
+    EmbeddingService,
+)
 from database.repositories.generation_repository import GenerationRepository
 from database.repositories.course_repository import CourseRepository
 from database.repositories.learning_source_repository import (
@@ -76,7 +79,7 @@ course_generation_service = (
 course_service = CourseService(
     repository=course_repository,
 )
-
+embedding_service = EmbeddingService()
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
@@ -88,6 +91,7 @@ register_learning_material_routes(
     learning_source_repository=(
         learning_source_repository
     ),
+    embedding_service= embedding_service,
 )
 register_generation_routes(
     agent_app,
