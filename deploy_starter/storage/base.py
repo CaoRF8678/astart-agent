@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from collections.abc import AsyncIterable
 
 class FileStorageError(Exception):
     """Base exception for file storage operations."""
@@ -54,4 +54,23 @@ class FileStorage(ABC):
         storage_key: str,
     ) -> bool:
         """Check whether a stored file exists."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def save_stream(
+        self,
+        *,
+        file_id: str,
+        filename: str,
+        chunks: AsyncIterable[bytes],
+    ) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_signed_url(
+        self,
+        storage_key: str,
+        *,
+        expires_seconds: int,
+    ) -> str:
         raise NotImplementedError
