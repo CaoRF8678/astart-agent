@@ -17,7 +17,7 @@ class FileStorage(ABC):
     """
 
     @abstractmethod
-    async def save(
+    async def save(  #前规定接口：以后不管是本地存储还是 OSS 存储，都必须提供一个同名的 save() 方法。
         self,
         *,
         file_id: str,

@@ -43,9 +43,10 @@ from services.course_service import CourseService
 from services.embedding_service import (
     EmbeddingService,
 )
-from services.embedding_service import (
-    EmbeddingService,
+from services.learning_material_service import (
+    LearningMaterialService,
 )
+
 from services.rag_service import RAGService
 
 from database.repositories.generation_repository import GenerationRepository
@@ -53,6 +54,8 @@ from database.repositories.course_repository import CourseRepository
 from database.repositories.learning_source_repository import (
     LearningSourceRepository,
 )
+
+from storage.oss import OSSFileStorage
 
 rag_min_similarity = config.get(
     "RAG_MIN_SIMILARITY"
@@ -63,8 +66,26 @@ agent_app = AgentApp(
     app_description="A helpful assistant",
 )
 
-file_storage = LocalFileStorage(
-     root_dir="data/uploads",
+
+local_file_storage = LocalFileStorage(
+    root_dir="data/uploads",
+)
+
+learning_material_storage = OSSFileStorage(
+    region=config.get("OSS_REGION"),
+    endpoint=(
+        config.get("OSS_ENDPOINT")
+        or None
+    ),
+    bucket=config.get(
+        "OSS_BUCKET_NAME"
+    ),
+    access_key_id=config.get(
+        "OSS_ACCESS_KEY_ID"
+    ),
+    access_key_secret=config.get(
+        "OSS_ACCESS_KEY_SECRET"
+    ),
 )
 
 intake_analyzer = IntakeAnalyzer()
@@ -103,6 +124,17 @@ course_service = CourseService(
 )
 embedding_service = EmbeddingService()
 
+learning_material_service = (
+    LearningMaterialService(
+        storage=learning_material_storage,
+        course_repository=course_repository,
+        learning_source_repository=(
+            learning_source_repository
+        ),
+        embedding_service=embedding_service,
+    )
+)
+
 retriever = Retriever(
     embedding_service=embedding_service,
     repository=source_segment_repository,
@@ -134,16 +166,17 @@ register_rag_routes(
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
-register_upload_routes(agent_app,storage=file_storage)
+
+register_upload_routes(
+    agent_app,
+    storage=local_file_storage,
+)
+
 register_learning_material_routes(
     agent_app,
-    storage=file_storage,
-    course_repository=course_repository,
-    learning_source_repository=(
-        learning_source_repository
-    ),
-    embedding_service= embedding_service,
+    service=learning_material_service,
 )
+
 register_generation_routes(
     agent_app,
     service=course_generation_service,

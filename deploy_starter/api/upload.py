@@ -7,33 +7,32 @@ from fastapi import (
     Request,
     UploadFile,
 )
-
 from fastapi.responses import JSONResponse
 
 from schemas.common import (
     ErrorDetail,
     ErrorResponse,
 )
-
 from schemas.upload import UploadResponse
-
 
 from storage.base import FileStorage
 
 from services.upload_service import (
     MAX_FILE_SIZE,
     UploadServiceError,
-    list_learning_materials,
     upload_file,
-    upload_learning_source,
 )
- 
+
+from services.learning_material_service import (
+    LearningMaterialService,
+)
+
+
 logger = logging.getLogger(__name__)
 
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
-#分块读取上传的内容
 
 UPLOAD_ERROR_STATUS = {
     "INVALID_FILENAME": 400,
@@ -49,11 +48,13 @@ UPLOAD_ERROR_STATUS = {
 
     "SESSION_NOT_FOUND": 404,
     "COURSE_NOT_FOUND": 404,
+
     "EMBEDDING_FAILED": 502,
     "SERVICE_NOT_READY": 503,
 
     "FILE_STORAGE_FAILED": 500,
 }
+
 
 def _upload_error_response(
     *,
@@ -81,6 +82,11 @@ def _upload_error_response(
         ),
     )
 
+
+# =========================================================
+# 原来的 /upload 使用
+# =========================================================
+
 async def read_upload_with_limit(
     file: UploadFile,
 ) -> bytes:
@@ -90,17 +96,25 @@ async def read_upload_with_limit(
     while True:
 
         # 每次最多读取 1 MB
-        chunk = await file.read(UPLOAD_CHUNK_SIZE)
+        chunk = await file.read(
+            UPLOAD_CHUNK_SIZE
+        )
 
         # 没有内容说明读取结束
         if not chunk:
             break
 
-        # 判断加入这一块以后是否超过 20 MB
-        if len(buffer) + len(chunk) > MAX_FILE_SIZE:
+        # 判断加入这一块以后是否超过文件大小限制
+        if (
+            len(buffer) + len(chunk)
+            > MAX_FILE_SIZE
+        ):
             raise UploadServiceError(
                 code="FILE_TOO_LARGE",
-                message="The uploaded file exceeds the maximum allowed size.",
+                message=(
+                    "The uploaded file exceeds "
+                    "the maximum allowed size."
+                ),
             )
 
         # 把这一块加入内存缓冲区
@@ -109,6 +123,30 @@ async def read_upload_with_limit(
     return bytes(buffer)
 
 
+# =========================================================
+# /materials 使用
+# 不一次把整个文件读进内存，而是分块向 Service 提供
+# =========================================================
+
+async def iter_upload_chunks(
+    file: UploadFile,
+):
+    while True:
+
+        chunk = await file.read(
+            UPLOAD_CHUNK_SIZE
+        )
+
+        if not chunk:
+            break
+
+        yield chunk
+
+
+# =========================================================
+# 普通 /upload
+# Stage 5 不修改这条旧路径
+# =========================================================
 
 def register_upload_routes(
     agent_app,
@@ -135,17 +173,17 @@ def register_upload_routes(
 
     ) -> UploadResponse | JSONResponse:
 
-        request_id = f"req_{uuid.uuid4()}"
+        request_id = (
+            f"req_{uuid.uuid4()}"
+        )
 
         try:
 
             # 1. 默认没有 session_service
             session_service = None
 
-
             # 2. 如果用户传了 session_id，
             #    才需要取得 Runner 和 session_service
-
             if session_id:
 
                 runner = getattr(
@@ -157,7 +195,9 @@ def register_upload_routes(
                 if runner is None:
                     raise UploadServiceError(
                         code="SERVICE_NOT_READY",
-                        message="Runner is not initialized.",
+                        message=(
+                            "Runner is not initialized."
+                        ),
                     )
 
                 session_service = getattr(
@@ -169,16 +209,18 @@ def register_upload_routes(
                 if session_service is None:
                     raise UploadServiceError(
                         code="SERVICE_NOT_READY",
-                        message="Session service is not initialized.",
+                        message=(
+                            "Session service is "
+                            "not initialized."
+                        ),
                     )
 
-
             # 3. 有大小限制地读取上传文件
-            
-            data = await read_upload_with_limit(file)
+            data = await read_upload_with_limit(
+                file
+            )
 
-            # 4. 调用 Service
-
+            # 4. 调用原来的 upload Service
             response = await upload_file(
                 storage=storage,
                 filename=file.filename,
@@ -191,56 +233,65 @@ def register_upload_routes(
 
             return response
 
-
         except UploadServiceError as exc:
             return _upload_error_response(
                 request_id=request_id,
-                exc = exc,
+                exc=exc,
             )
-
 
         except Exception:
 
             logger.exception(
-                "Unhandled /upload error, request_id=%s",
+                "Unhandled /upload error, "
+                "request_id=%s",
                 request_id,
             )
 
-            # 这里你自己按照 /chat、/history
-            # 的 INTERNAL_SERVER_ERROR 风格完成
             error_response = ErrorResponse(
-                request_id= request_id,
-                error= ErrorDetail(
-                    code = "INTERNAL_SERVER_ERROR",
-                    message= "An unexpected server error occurred.",
+                request_id=request_id,
+                error=ErrorDetail(
+                    code="INTERNAL_SERVER_ERROR",
+                    message=(
+                        "An unexpected server "
+                        "error occurred."
                     ),
+                ),
             )
+
             return JSONResponse(
-            status_code= 500,
-            content= error_response.model_dump(mode="json"),
+                status_code=500,
+                content=(
+                    error_response.model_dump(
+                        mode="json"
+                    )
+                ),
             )
-            
+
         finally:
+            await file.close()
 
-            # 无论成功还是失败，都关闭 UploadFile
-           await file.close()
 
+# =========================================================
+# Course Learning Materials
+# Stage 5 后只依赖 LearningMaterialService
+# =========================================================
 
 def register_learning_material_routes(
     agent_app,
     *,
-    storage: FileStorage,
-    course_repository,
-    learning_source_repository,
-    embedding_service,
+    service: LearningMaterialService,
 ) -> None:
+
+    # -----------------------------------------------------
+    # POST /courses/{course_id}/materials
+    # -----------------------------------------------------
+
     @agent_app.endpoint(
         "/courses/{course_id}/materials",
         methods=["POST"],
     )
     async def upload_learning_material(
         course_id: str,
-        request: Request,
         file: UploadFile = File(...),
         user_id: str = Form(
             ...,
@@ -252,29 +303,36 @@ def register_learning_material_routes(
         )
 
         try:
-            data = await read_upload_with_limit(
-                file
-            )
 
-            response = await upload_learning_source(
-                storage=storage,
-                course_repository=(
-                    course_repository
-                ),
-                learning_source_repository=(
-                    learning_source_repository
-                ),
-                embedding_service  = embedding_service,
+            response = await service.upload_material(
                 course_id=course_id,
                 filename=file.filename,
                 content_type=file.content_type,
-                data=data,
+
+                # 注意：
+                # 不再 await file.read()
+                # 而是把分块数据流交给 Service
+                chunks=iter_upload_chunks(
+                    file
+                ),
+
                 user_id=user_id,
                 request_id=request_id,
             )
 
+            # Document:
+            # ready → HTTP 201
+            #
+            # Audio:
+            # pending → HTTP 202
+            status_code = (
+                202
+                if response.status == "pending"
+                else 201
+            )
+
             return JSONResponse(
-                status_code=201,
+                status_code=status_code,
                 content=response.model_dump(
                     mode="json"
                 ),
@@ -287,6 +345,7 @@ def register_learning_material_routes(
             )
 
         except Exception:
+
             logger.exception(
                 "Unhandled learning material "
                 "upload error, request_id=%s",
@@ -316,6 +375,10 @@ def register_learning_material_routes(
         finally:
             await file.close()
 
+    # -----------------------------------------------------
+    # GET /courses/{course_id}/materials
+    # -----------------------------------------------------
+
     @agent_app.endpoint(
         "/courses/{course_id}/materials",
         methods=["GET"],
@@ -329,13 +392,8 @@ def register_learning_material_routes(
         )
 
         try:
-            response = await list_learning_materials(
-                course_repository=(
-                    course_repository
-                ),
-                learning_source_repository=(
-                    learning_source_repository
-                ),
+
+            response = await service.list_materials(
                 course_id=course_id,
                 user_id=user_id,
                 request_id=request_id,
@@ -355,6 +413,7 @@ def register_learning_material_routes(
             )
 
         except Exception:
+
             logger.exception(
                 "Unhandled material list error, "
                 "request_id=%s",
