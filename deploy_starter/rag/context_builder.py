@@ -5,9 +5,30 @@ from schemas.rag import RetrievedSegment
 
 DEFAULT_MAX_CONTEXT_CHARS = 10000
 
+def _format_audio_time(milliseconds: int) -> str:
+    total_seconds = max(0, milliseconds) // 1000
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    return f"{minutes:02d}:{seconds:02d}"
+
 def format_locator(
     locator: dict,
 ) -> str:
+
+    if "start_ms" in locator:
+        start = int(locator["start_ms"])
+        end = int(
+            locator.get("end_ms", start)
+        )
+
+        return (
+            f"音频 {_format_audio_time(start)}"
+            f"-{_format_audio_time(end)}"
+        )
     if "page_start" in locator:
         start = locator["page_start"]
         end = locator.get(
