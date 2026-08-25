@@ -12,6 +12,9 @@ class SourceSegment(BaseModel): #后端内部正式资料片段
     segment_order: int = Field(ge=0)
 
     locator: dict[str, Any]
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
+
 
 
 class LearningSource(BaseModel): #后端内部完整学习资料

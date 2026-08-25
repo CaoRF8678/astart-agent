@@ -12,7 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-
+from pgvector.sqlalchemy import VECTOR
 from database.base import Base
 
 
@@ -64,4 +64,14 @@ class SourceSegmentModel(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+
+    embedding: Mapped[list[float] | None] = mapped_column(
+        VECTOR(1024),
+        nullable=True,
+)
+
+    embedding_model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
     )
