@@ -11,6 +11,9 @@ from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest
 from agentscope_runtime.engine.tracing import TraceType, trace, TracingUtil
 from opentelemetry import trace as ot_trace
 from database.connection import AsyncSessionLocal
+from database.repositories.source_segment_repository import (
+    SourceSegmentRepository,
+)
 
 from core.config import config
 from core.logging_config import LOCAL_IP, logger, success_response
@@ -23,6 +26,9 @@ from api.history import register_history_routes
 from api.intake import register_intake_routes
 from api.course_generation import register_generation_routes
 from api.course import register_course_routes
+from api.rag import register_rag_routes
+
+from rag.retriever import Retriever
 
   #一个负责注册 /upload 路由
 from api.upload import (
@@ -37,11 +43,21 @@ from services.course_service import CourseService
 from services.embedding_service import (
     EmbeddingService,
 )
+from services.embedding_service import (
+    EmbeddingService,
+)
+from services.rag_service import RAGService
+
 from database.repositories.generation_repository import GenerationRepository
 from database.repositories.course_repository import CourseRepository
 from database.repositories.learning_source_repository import (
     LearningSourceRepository,
 )
+
+rag_min_similarity = config.get(
+    "RAG_MIN_SIMILARITY"
+)
+
 agent_app = AgentApp(
     app_name=config.get("APP_NAME"),
     app_description="A helpful assistant",
@@ -76,10 +92,45 @@ course_generation_service = (
         course_repository=course_repository,
     )
 )
+source_segment_repository = (
+    SourceSegmentRepository(
+        session_factory=AsyncSessionLocal,
+    )
+)
+
 course_service = CourseService(
     repository=course_repository,
 )
 embedding_service = EmbeddingService()
+
+retriever = Retriever(
+    embedding_service=embedding_service,
+    repository=source_segment_repository,
+    top_k=int(
+        config.get("RAG_TOP_K", 5)
+    ),
+    min_similarity=(
+        float(rag_min_similarity)
+        if rag_min_similarity is not None
+        else None
+    ),
+)
+rag_service = RAGService(
+    course_repository=course_repository,
+    retriever=retriever,
+    max_context_chars=int(
+        config.get(
+            "RAG_MAX_CONTEXT_CHARS",
+            10000,
+        )
+    ),
+)
+
+register_rag_routes(
+    agent_app,
+    service=rag_service,
+)
+
 register_chat_routes(agent_app)
 register_lifecycle(agent_app)
 register_history_routes(agent_app)
