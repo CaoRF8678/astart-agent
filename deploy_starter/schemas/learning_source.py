@@ -2,6 +2,14 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+from typing import Literal
+
+LearningSourceStatus = Literal[
+    "pending",
+    "processing",
+    "ready",
+    "failed",
+]
 
 
 class SourceSegment(BaseModel): #后端内部正式资料片段
@@ -17,7 +25,7 @@ class SourceSegment(BaseModel): #后端内部正式资料片段
 
 
 
-class LearningSource(BaseModel): #后端内部完整学习资料
+class LearningSource(BaseModel):
     file_id: str
     course_id: str
 
@@ -30,6 +38,19 @@ class LearningSource(BaseModel): #后端内部完整学习资料
     )
 
     storage_key: str
+
+    status: LearningSourceStatus
+
+    worker_id: str | None = None
+    processing_started_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    finished_at: datetime | None = None
+
+    error_code: str | None = None
+    error_message: str | None = None
+
+    transcript_storage_key: str | None = None
+
     created_at: datetime
 
 
@@ -41,6 +62,7 @@ class LearningMaterialUploadResponse(BaseModel):  #上传接口返回
     content_type: str
     size: int = Field(gt=0)
     created_at: datetime
+    status: LearningSourceStatus 
 
 
 class LearningMaterialListItem(BaseModel): #资料列表接口返回
@@ -49,6 +71,7 @@ class LearningMaterialListItem(BaseModel): #资料列表接口返回
     content_type: str
     size: int = Field(gt=0)
     created_at: datetime
+    status: LearningSourceStatus
 
 
 class LearningMaterialListResponse(BaseModel):
