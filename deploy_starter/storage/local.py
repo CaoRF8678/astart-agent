@@ -4,7 +4,7 @@ import tempfile
 
 from datetime import datetime, timezone
 from pathlib import Path
-
+from collections.abc import AsyncIterable
 from storage.base import (
     FileStorage,
     FileStorageError,
@@ -160,6 +160,96 @@ class LocalFileStorage(FileStorage):
 
         return storage_key
 
+    async def save_stream(
+        self,
+        *,
+        file_id: str,
+        filename: str,
+        chunks: AsyncIterable[bytes],
+    ) -> str:
+
+        suffix = (
+            Path(filename)
+            .suffix
+            .lower()
+        )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        storage_key = (
+            f"{now.year:04d}/"
+            f"{now.month:02d}/"
+            f"{file_id}{suffix}"
+        )
+
+        path = self._resolve_storage_key(
+            storage_key
+        )
+
+        await asyncio.to_thread(
+            path.parent.mkdir,
+            parents=True,
+            exist_ok=True,
+        )
+
+        temp_path: str | None = None
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=".upload_",
+                delete=False,
+            ) as temp_file:
+
+                temp_path = temp_file.name
+
+                async for chunk in chunks:
+                    if chunk:
+                        await asyncio.to_thread(
+                            temp_file.write,
+                            chunk,
+                        )
+
+                await asyncio.to_thread(
+                    temp_file.flush
+                )
+
+                await asyncio.to_thread(
+                    os.fsync,
+                    temp_file.fileno(),
+                )
+
+            # 离开 with 后 temp_file 已经 close
+
+            await asyncio.to_thread(
+                os.replace,
+                temp_path,
+                path,
+            )
+
+            temp_path = None
+
+            return storage_key
+
+        except OSError as exc:
+            raise FileStorageError(
+                "Failed to stream file to local storage."
+            ) from exc
+
+        finally:
+            if temp_path is not None:
+                try:
+                    await asyncio.to_thread(
+                        Path(temp_path).unlink,
+                        missing_ok=True,
+                    )
+                except OSError:
+                    pass
+
+
     async def delete(
         self,
         storage_key: str,
@@ -196,3 +286,13 @@ class LocalFileStorage(FileStorage):
             raise FileStorageError(
                 "Failed to check file existence."
             ) from exc
+
+    async def create_signed_url(
+        self,
+        storage_key: str,
+        *,
+        expires_seconds: int,
+    ) -> str:
+        raise FileStorageError(
+            "Local file storage does not support signed URLs."
+        )

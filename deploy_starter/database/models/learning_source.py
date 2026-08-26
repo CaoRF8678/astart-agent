@@ -22,6 +22,10 @@ class LearningSourceModel(Base):
             "size > 0",
             name="ck_learning_sources_size",
         ),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'ready', 'failed')",
+            name="ck_learning_sources_status",
+        ),
     )
 
     file_id: Mapped[str] = mapped_column(
@@ -67,4 +71,46 @@ class LearningSourceModel(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable= False,
+        default= "ready",
+        server_default="ready",
+    )
+
+    worker_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    heartbeat_at: Mapped[datetime | None] =mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    finished_at: Mapped[datetime | None] =mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    error_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable= True,
+    )
+
+    transcript_storage_key: Mapped[str | None] = mapped_column(
+        Text,
+        nullable= True,
     )
