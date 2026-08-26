@@ -89,3 +89,12 @@ dist/
 # This file currently only checks current_user/current_database
 # and is not part of the application source.
 deploy_starter/CREATE ROLE astart_app.pgsql
+
+# Local archives / backups
+*.zip
+
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
