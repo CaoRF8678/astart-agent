@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
 
 from core.config import config
 
+import database.models  # noqa: F401
 
 DATABASE_URL = (
     os.getenv("DATABASE_URL")

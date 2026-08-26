@@ -111,7 +111,7 @@ RAG_TOP_K: 5
 RAG_MIN_SIMILARITY: null
 RAG_MAX_CONTEXT_CHARS: 10000
 
-OSS_BUCKET_NAME: "your-oss-bucket"
+OSS_BUCKET: "your-oss-bucket"
 OSS_REGION: "cn-beijing"
 OSS_ENDPOINT: "https://oss-cn-beijing.aliyuncs.com"
 
