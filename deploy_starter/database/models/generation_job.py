@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import CheckConstraint
 from database.base import Base
 from datetime import datetime
+from sqlalchemy import ForeignKey
 
 class GenerationJobModel(Base):
     __tablename__ = "generation_jobs"
@@ -89,4 +90,12 @@ class GenerationJobModel(Base):
         nullable=False,
         server_default=func.now(),
     )
-
+    
+    target_course_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey(
+            "courses.course_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )

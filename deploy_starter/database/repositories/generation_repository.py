@@ -43,6 +43,7 @@ class GenerationRepository:
         generation_id: str,
         user_id:str,
         brief: LearningBriefContent,
+        target_course_id: str | None = None,
     ) -> None:
         async with self._session_factory() as session:
             async with session.begin():
@@ -51,6 +52,7 @@ class GenerationRepository:
                     generation_id = generation_id,
                     user_id = user_id,
                     status = "pending",
+                    target_course_id = target_course_id,
                     learning_brief = brief.model_dump(
                         mode = "json"
                     ),
@@ -175,6 +177,7 @@ class GenerationRepository:
             return GenerationJob(
                 generation_id=job_model.generation_id,
                 user_id=job_model.user_id,
+                target_course_id= job_model.target_course_id,
                 status=job_model.status,
                 stages=stages,
 

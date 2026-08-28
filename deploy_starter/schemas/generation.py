@@ -101,6 +101,7 @@ class GenerationJob(BaseModel):
 
     error_code: str | None = None
     error_message: str | None = None
+    target_course_id: str | None = None
 
 
 class ResearchTopic(BaseModel):
