@@ -19,6 +19,11 @@ def read_config():
                         value = False
                     elif value.isdigit():
                         value = int(value)
+                    elif value.lower() in {
+                        "null",
+                        "none",
+                    }:
+                        value = None
                     config[key] = value
     return config
 

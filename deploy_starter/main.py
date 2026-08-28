@@ -78,7 +78,7 @@ learning_material_storage = OSSFileStorage(
         or None
     ),
     bucket=config.get(
-        "OSS_BUCKET_NAME"
+        "OSS_BUCKET"
     ),
     access_key_id=config.get(
         "OSS_ACCESS_KEY_ID"
