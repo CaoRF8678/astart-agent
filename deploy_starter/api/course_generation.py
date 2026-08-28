@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 
 from services.course_generation_service import CourseGenerationService,CourseGenerationServiceError
 from schemas.generation import CourseGenerationRequest,CourseGenerationCancelRequest
-
+from schemas.generation import CourseRegenerationRequest
 def _service_error_response(
     exc:CourseGenerationServiceError,
 ):
@@ -11,6 +11,9 @@ def _service_error_response(
         "GENERATION_NOT_FOUND": 404,
         "GENERATION_ALREADY_FINISHED": 409,
         "GENERATION_CANCEL_CONFLICT": 409,
+
+        "COURSE_NOT_FOUND":404,
+        "COURSE_REGENERATION_IN_PROGRESS":409,
     }
     status_code = status_code_map.get(
         exc.code,
@@ -103,6 +106,32 @@ def register_generation_routes(
             )
         except CourseGenerationServiceError as exc:
             return _service_error_response(exc)
-        
+
+    @agent_app.endpoint(
+        "/courses/{course_id}/regenerate",
+        methods=["POST"],
+    )
+    async def regenerate_course(
+        course_id: str,
+        body: CourseRegenerationRequest,
+    ):
+        request_id = f"req_{uuid.uuid4()}"
+
+        try:
+            response = await service.create_regeneration(
+                course_id=course_id,
+                request=body,
+                request_id=request_id,
+            )
+
+            return JSONResponse(
+                status_code=202,
+                content=response.model_dump(
+                    mode="json"
+                ),
+            )
+
+        except CourseGenerationServiceError as exc:
+            return _service_error_response(exc)
 
         

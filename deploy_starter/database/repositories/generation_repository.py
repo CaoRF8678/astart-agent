@@ -251,7 +251,40 @@ class GenerationRepository:
             generation_id= generation_id,
             user_id=user_id,
         )
-                
+
+    async def get_active_job_for_target_course(
+        self,
+        *,
+        target_course_id: str,
+    ) -> GenerationJob | None:
+
+        async with self._session_factory() as session:
+
+            stmt = (
+                select(GenerationJobModel)
+                .where(
+                    GenerationJobModel.target_course_id
+                    == target_course_id,
+                    GenerationJobModel.status.in_(
+                        ["pending", "running"]
+                    ),
+                )
+                .order_by(
+                    GenerationJobModel.created_at.desc()
+                )
+                .limit(1)
+            )
+
+            result = await session.execute(stmt)
+            job_model = result.scalar_one_or_none()
+
+            if job_model is None:
+                return None
+
+            return await self._get_job(
+                generation_id=job_model.generation_id,
+            )
+
     async def request_cancel(
     self,
     *,

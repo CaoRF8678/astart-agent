@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from schemas.generation import CourseGenerationRequest,CourseGenerationAcceptedResponse
 from schemas.generation import CourseGenerationCancelRequest,CourseGenerationCancelResponse,CourseGenerationStatusResponse
-
+from schemas.generation import CourseRegenerationRequest
 class CourseGenerationServiceError(Exception):
 
     def __init__(
@@ -156,4 +156,73 @@ class CourseGenerationService:
             final_outline=job.final_outline,
             error_code=job.error_code,
             error_message=job.error_message,
+        )
+
+    async def create_regeneration(
+        self,
+        *,
+        course_id: str,
+        request: CourseRegenerationRequest,
+        request_id: str,
+    ) -> CourseGenerationAcceptedResponse:
+
+        # 1. 确认课程存在，并且属于当前用户
+        course = await self.course_repository.get_course_for_user(
+            course_id=course_id,
+            user_id=request.user_id,
+        )
+
+        if course is None:
+            raise CourseGenerationServiceError(
+                request_id=request_id,
+                code="COURSE_NOT_FOUND",
+                message="Course not found.",
+            )
+
+        # 2. 找到这门课程最初的 Generation Job
+        original_job = await self.repository.get_job_for_user(
+            generation_id=course.generation_id,
+            user_id=request.user_id,
+        )
+
+        if original_job is None:
+            raise CourseGenerationServiceError(
+                request_id=request_id,
+                code="GENERATION_NOT_FOUND",
+                message="Original course generation job not found.",
+            )
+
+        # 3. 检查是否已经有正在执行的 regeneration
+        active_job = (
+            await self.repository
+            .get_active_job_for_target_course(
+                target_course_id=course_id,
+            )
+        )
+
+        if active_job is not None:
+            raise CourseGenerationServiceError(
+                request_id=request_id,
+                code="COURSE_REGENERATION_IN_PROGRESS",
+                message="Course regeneration is already in progress.",
+            )
+
+        # 4. 创建新的 Generation ID
+        generation_id = f"gen_{uuid.uuid4()}"
+
+        # 5. 创建新的 Generation Job
+        #    复用原课程最初的 LearningBrief
+        await self.repository.create_job(
+            generation_id=generation_id,
+            user_id=request.user_id,
+            brief=original_job.learning_brief,
+            target_course_id=course_id,
+        )
+
+        # 6. 返回 pending
+        return CourseGenerationAcceptedResponse(
+            request_id=request_id,
+            generation_id=generation_id,
+            status="pending",
+            created_at=datetime.now(timezone.utc),
         )

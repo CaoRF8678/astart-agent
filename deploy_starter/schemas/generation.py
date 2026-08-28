@@ -272,3 +272,6 @@ class CourseGenerationCancelResponse(BaseModel):
     generation_id: str
     status: GenerationStatus
     cancel_requested: bool
+
+class CourseRegenerationRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
