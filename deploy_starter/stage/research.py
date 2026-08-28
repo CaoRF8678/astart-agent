@@ -1,6 +1,6 @@
 
 from schemas.intake import LearningBriefContent
-from schemas.generation import ResearchResult
+from schemas.generation import ResearchResult,RetrievalQueryPlan
 from stage.base import StructuredStageRunner
 RESEARCH_SYSTEM_PROMPT = """
 你是 Astart Course Generation Workflow 中的 Research Stage。
@@ -24,6 +24,48 @@ RESEARCH_SYSTEM_PROMPT = """
 9. 严禁伪造论文、URL、官方文档或其他来源。
 """
 
+RETRIEVAL_QUERY_SYSTEM_PROMPT = """
+你是 Astart Course Research 的检索查询规划器。
+
+你的任务：
+根据 LearningBrief 生成 2～5 条用于课程资料向量检索的查询。
+
+要求：
+1. 查询应覆盖用户核心 goal。
+2. 优先覆盖 target_outcome 与 focus_areas。
+3. 必要时加入完成目标所需的 prerequisite 查询。
+4. 查询必须简洁、自包含，适合语义向量检索。
+5. 不要生成答案，只生成 retrieval query。
+6. 不得虚构 LearningBrief 中不存在的用户背景。
+7. 多条查询不要只是同义改写，应覆盖不同检索方向。
+"""
+
+def normalize_queries(
+    *,
+    goal: str,
+    planned: list[str],
+) -> list[str]:
+    result = []
+    seen = set()
+
+    for raw in [goal, *planned]:
+        query = raw.strip()
+
+        if not query:
+            continue
+
+        normalized_key = query.casefold()
+
+        if normalized_key in seen:
+            continue
+
+        seen.add(normalized_key)
+        result.append(query)
+
+        if len(result) >= 5:
+            break
+
+    return result
 
 def calculate_time_budget_minutes(
     brief: LearningBriefContent,
@@ -72,3 +114,25 @@ async def run_research(
         }
     )
     return result
+
+async def plan_retrieval_queries(
+    *,
+    runner: StructuredStageRunner,
+    brief: LearningBriefContent,
+) -> list[str]:
+
+    plan = await runner.run(
+        name="RetrievalQueryPlanner",
+        system_prompt=RETRIEVAL_QUERY_SYSTEM_PROMPT,
+        payload={
+            "learning_brief": brief.model_dump(
+                mode="json"
+            ),
+        },
+        structured_model=RetrievalQueryPlan,
+    )
+
+    return normalize_queries(
+        goal=brief.goal,
+        planned=plan.queries,
+    )

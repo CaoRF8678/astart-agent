@@ -275,3 +275,9 @@ class CourseGenerationCancelResponse(BaseModel):
 
 class CourseRegenerationRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
+
+class RetrievalQueryPlan(BaseModel):
+    queries: list[str] = Field(
+        min_length=1,
+        max_length=5,
+    )

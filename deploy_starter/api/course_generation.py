@@ -134,4 +134,4 @@ def register_generation_routes(
         except CourseGenerationServiceError as exc:
             return _service_error_response(exc)
 
-        
+                 
