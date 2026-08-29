@@ -1,8 +1,9 @@
-#这个管正式课程
+# 负责正式课程数据
 import uuid
-
-from sqlalchemy import select, delete
 from datetime import datetime, timezone
+
+from sqlalchemy import delete, select
+
 from database.models.course import CourseModel
 from database.models.course_section import CourseSectionModel
 from schemas.course import (
@@ -10,23 +11,121 @@ from schemas.course import (
     CourseListItem,
     CourseOutline,
     CourseSection,
+    CourseSectionSourceReference,
 )
+from schemas.generation import GenerationSectionResult
 
 
 class CourseRepository:
     def __init__(self, session_factory):
         self._session_factory = session_factory
 
-    async def create_from_outline(
+    @staticmethod
+    def _final_result_map(
+        section_results: list[GenerationSectionResult],
+    ) -> dict[tuple[int, int, int], GenerationSectionResult]:
+        result_map = {
+            (
+                item.module_order,
+                item.chapter_order,
+                item.section_order,
+            ): item
+            for item in section_results
+        }
+
+        for item in section_results:
+            if item.final_content is None:
+                raise RuntimeError(
+                    "Course section final content is missing: "
+                    f"{item.module_order}/"
+                    f"{item.chapter_order}/"
+                    f"{item.section_order}"
+                )
+
+        return result_map
+
+    @classmethod
+    def _build_section_models(
+        cls,
+        *,
+        course_id: str,
+        outline: CourseOutline,
+        section_results: list[GenerationSectionResult],
+    ) -> list[CourseSectionModel]:
+        result_map = cls._final_result_map(
+            section_results
+        )
+        models: list[CourseSectionModel] = []
+        expected_positions: set[
+            tuple[int, int, int]
+        ] = set()
+
+        for module_order, module in enumerate(
+            outline.modules
+        ):
+            for chapter_order, chapter in enumerate(
+                module.chapters
+            ):
+                for section_order, section in enumerate(
+                    chapter.sections
+                ):
+                    position = (
+                        module_order,
+                        chapter_order,
+                        section_order,
+                    )
+                    expected_positions.add(position)
+
+                    result = result_map.get(position)
+                    if result is None:
+                        raise RuntimeError(
+                            "Course section result is missing: "
+                            f"{position}"
+                        )
+
+                    models.append(
+                        CourseSectionModel(
+                            section_id=(
+                                f"sec_{uuid.uuid4()}"
+                            ),
+                            course_id=course_id,
+                            module_title=module.title,
+                            chapter_title=chapter.title,
+                            title=section.title,
+                            module_order=module_order,
+                            chapter_order=chapter_order,
+                            section_order=section_order,
+                            estimated_minutes=(
+                                section.estimated_minutes
+                            ),
+                            content=result.final_content,
+                            source_references=[
+                                ref.model_dump(mode="json")
+                                for ref in (
+                                    result.final_references
+                                )
+                            ],
+                        )
+                    )
+
+        if set(result_map) != expected_positions:
+            raise RuntimeError(
+                "Generation section results do not match "
+                "the final outline."
+            )
+
+        return models
+
+    async def create_from_generation(
         self,
         *,
         generation_id: str,
         user_id: str,
         outline: CourseOutline,
+        section_results: list[GenerationSectionResult],
     ) -> str:
         async with self._session_factory() as session:
             async with session.begin():
-
                 existing_stmt = (
                     select(CourseModel)
                     .where(
@@ -34,7 +133,6 @@ class CourseRepository:
                         == generation_id
                     )
                 )
-
                 existing_result = await session.execute(
                     existing_stmt
                 )
@@ -46,7 +144,6 @@ class CourseRepository:
                     return existing_course.course_id
 
                 course_id = f"course_{uuid.uuid4()}"
-
                 course_model = CourseModel(
                     course_id=course_id,
                     user_id=user_id,
@@ -55,51 +152,27 @@ class CourseRepository:
                         mode="json"
                     ),
                 )
-
                 session.add(course_model)
-                for module_order, module in enumerate(
-                    outline.modules
-                ):
-                    for chapter_order, chapter in enumerate(
-                        module.chapters
-                    ):
-                        for section_order, section in enumerate(
-                            chapter.sections
-                        ):
-
-                            section_model = CourseSectionModel(
-                                section_id=f"sec_{uuid.uuid4()}",
-                                course_id=course_id,
-
-                                module_title=module.title,
-                                chapter_title=chapter.title,
-                                title=section.title,
-
-                                module_order=module_order,
-                                chapter_order=chapter_order,
-                                section_order=section_order,
-
-                                estimated_minutes=(
-                                    section.estimated_minutes
-                                ),
-                            )
-
-                            session.add(section_model)
+                session.add_all(
+                    self._build_section_models(
+                        course_id=course_id,
+                        outline=outline,
+                        section_results=section_results,
+                    )
+                )
 
                 return course_id
 
-    async def replace_outline(
+    async def replace_from_generation(
         self,
         *,
         course_id: str,
         user_id: str,
         outline: CourseOutline,
+        section_results: list[GenerationSectionResult],
     ) -> None:
-
         async with self._session_factory() as session:
             async with session.begin():
-
-                # 1. 找到并锁住要更新的 Course
                 stmt = (
                     select(CourseModel)
                     .where(
@@ -108,30 +181,27 @@ class CourseRepository:
                     )
                     .with_for_update()
                 )
-
                 result = await session.execute(stmt)
-
-                course_model = (
-                    result.scalar_one_or_none()
-                )
+                course_model = result.scalar_one_or_none()
 
                 if course_model is None:
                     raise RuntimeError(
                         f"Course not found: {course_id}"
                     )
 
-                # 2. 更新 Course 的完整 Outline
-                course_model.outline = (
-                    outline.model_dump(
-                        mode="json"
-                    )
+                new_sections = self._build_section_models(
+                    course_id=course_id,
+                    outline=outline,
+                    section_results=section_results,
                 )
 
-                course_model.updated_at = (
-                    datetime.now(timezone.utc)
+                course_model.outline = outline.model_dump(
+                    mode="json"
+                )
+                course_model.updated_at = datetime.now(
+                    timezone.utc
                 )
 
-                # 3. 删除这门课程原来的所有 Section
                 await session.execute(
                     delete(CourseSectionModel)
                     .where(
@@ -139,43 +209,13 @@ class CourseRepository:
                         == course_id
                     )
                 )
-
-                # 4. 根据新的 Outline 重新创建 Section
-                for module_order, module in enumerate(
-                    outline.modules
-                ):
-                    for chapter_order, chapter in enumerate(
-                        module.chapters
-                    ):
-                        for section_order, section in enumerate(
-                            chapter.sections
-                        ):
-
-                            section_model = CourseSectionModel(
-                                section_id=f"sec_{uuid.uuid4()}",
-                                course_id=course_id,
-
-                                module_title=module.title,
-                                chapter_title=chapter.title,
-                                title=section.title,
-
-                                module_order=module_order,
-                                chapter_order=chapter_order,
-                                section_order=section_order,
-
-                                estimated_minutes=(
-                                    section.estimated_minutes
-                                ),
-                            )
-
-                            session.add(section_model)
+                session.add_all(new_sections)
 
     async def get_course_id_by_generation(
         self,
         *,
         generation_id: str,
     ) -> str | None:
-
         async with self._session_factory() as session:
             stmt = (
                 select(CourseModel.course_id)
@@ -184,10 +224,9 @@ class CourseRepository:
                     == generation_id
                 )
             )
-
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
-    #根据 course_id + user_id，查询某个用户拥有的一门课程，并把数据库里的数据转换成 Pydantic 的 Course 对象返回。
+
     async def get_course_for_user(
         self,
         *,
@@ -202,17 +241,62 @@ class CourseRepository:
                     CourseModel.user_id == user_id,
                 )
             )
-
             course_result = await session.execute(
                 course_stmt
             )
-
             course_model = (
                 course_result.scalar_one_or_none()
             )
 
             if course_model is None:
                 return None
+
+            section_stmt = (
+                select(CourseSectionModel)
+                .where(
+                    CourseSectionModel.course_id
+                    == course_id
+                )
+                .order_by(
+                    CourseSectionModel.module_order,
+                    CourseSectionModel.chapter_order,
+                    CourseSectionModel.section_order,
+                )
+            )
+            section_result = await session.execute(
+                section_stmt
+            )
+            section_models = list(
+                section_result.scalars().all()
+            )
+
+            sections = [
+                CourseSection(
+                    section_id=item.section_id,
+                    course_id=item.course_id,
+                    module_title=item.module_title,
+                    chapter_title=item.chapter_title,
+                    title=item.title,
+                    module_order=item.module_order,
+                    chapter_order=item.chapter_order,
+                    section_order=item.section_order,
+                    estimated_minutes=(
+                        item.estimated_minutes
+                    ),
+                    content=item.content,
+                    source_references=[
+                        CourseSectionSourceReference.model_validate(
+                            ref
+                        )
+                        for ref in (
+                            item.source_references or []
+                        )
+                    ],
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
+                )
+                for item in section_models
+            ]
 
             return Course(
                 course_id=course_model.course_id,
@@ -221,6 +305,7 @@ class CourseRepository:
                 outline=CourseOutline.model_validate(
                     course_model.outline
                 ),
+                sections=sections,
                 created_at=course_model.created_at,
                 updated_at=course_model.updated_at,
             )
@@ -230,9 +315,7 @@ class CourseRepository:
         *,
         user_id: str,
     ) -> list[CourseListItem]:
-
         async with self._session_factory() as session:
-
             stmt = (
                 select(CourseModel)
                 .where(
@@ -242,19 +325,16 @@ class CourseRepository:
                     CourseModel.created_at.desc()
                 )
             )
-
             result = await session.execute(stmt)
             course_models = list(
                 result.scalars().all()
             )
 
             courses: list[CourseListItem] = []
-
             for course_model in course_models:
                 outline = CourseOutline.model_validate(
                     course_model.outline
                 )
-
                 courses.append(
                     CourseListItem(
                         course_id=course_model.course_id,
