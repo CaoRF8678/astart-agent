@@ -234,6 +234,7 @@ class CourseRepository:
         user_id: str,
     ) -> Course | None:
         async with self._session_factory() as session:
+            # 1. 先查 Course
             course_stmt = (
                 select(CourseModel)
                 .where(
@@ -241,6 +242,7 @@ class CourseRepository:
                     CourseModel.user_id == user_id,
                 )
             )
+
             course_result = await session.execute(
                 course_stmt
             )
@@ -251,6 +253,7 @@ class CourseRepository:
             if course_model is None:
                 return None
 
+            # 2. 再查这门课的所有 Section
             section_stmt = (
                 select(CourseSectionModel)
                 .where(
@@ -263,13 +266,16 @@ class CourseRepository:
                     CourseSectionModel.section_order,
                 )
             )
+
             section_result = await session.execute(
                 section_stmt
             )
+
             section_models = list(
                 section_result.scalars().all()
             )
 
+            # 3. ORM Model → Pydantic CourseSection
             sections = [
                 CourseSection(
                     section_id=item.section_id,
@@ -298,6 +304,7 @@ class CourseRepository:
                 for item in section_models
             ]
 
+            # 4. 最后把 Outline + Sections 一起返回
             return Course(
                 course_id=course_model.course_id,
                 user_id=course_model.user_id,
@@ -309,7 +316,7 @@ class CourseRepository:
                 created_at=course_model.created_at,
                 updated_at=course_model.updated_at,
             )
-
+    
     async def list_courses_for_user(
         self,
         *,

@@ -809,3 +809,55 @@ class GenerationRepository:
                 model.updated_at = datetime.now(
                     timezone.utc
                 )
+
+    async def save_section_final(
+        self,
+        *,
+        generation_id: str,
+        module_order: int,
+        chapter_order: int,
+        section_order: int,
+        final_result: SectionContentResult,
+        final_references: list[
+            CourseSectionSourceReference
+        ],
+    ) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                stmt = (
+                    select(GenerationSectionResultModel)
+                    .where(
+                        GenerationSectionResultModel.generation_id
+                        == generation_id,
+                        GenerationSectionResultModel.module_order
+                        == module_order,
+                        GenerationSectionResultModel.chapter_order
+                        == chapter_order,
+                        GenerationSectionResultModel.section_order
+                        == section_order,
+                    )
+                    .with_for_update()
+                )
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+
+                if (
+                    model is None
+                    or model.draft_content is None
+                ):
+                    raise RuntimeError(
+                        "Section draft result not found: "
+                        f"{generation_id}/"
+                        f"{module_order}/"
+                        f"{chapter_order}/"
+                        f"{section_order}"
+                    )
+
+                model.final_content = final_result.content
+                model.final_references = [
+                    item.model_dump(mode="json")
+                    for item in final_references
+                ]
+                model.updated_at = datetime.now(
+                    timezone.utc
+                )

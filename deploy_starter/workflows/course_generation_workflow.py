@@ -938,42 +938,6 @@ class CourseGenerationWorkflow:
             )
             raise
         # =========================
-        # 11. Publish Course
-        # =========================
-
-        section_results = (
-            await self.repository.list_section_results(
-                generation_id=generation_id
-            )
-        )
-
-        try:
-            if job.target_course_id is None:
-                await self.course_repository.create_from_generation(
-                    generation_id=generation_id,
-                    user_id=job.user_id,
-                    outline=revision_result,
-                    section_results=section_results,
-                )
-            else:
-                await self.course_repository.replace_from_generation(
-                    course_id=job.target_course_id,
-                    user_id=job.user_id,
-                    outline=revision_result,
-                    section_results=section_results,
-                )
-
-        except Exception as exc:
-            error_code = type(exc).__name__
-            error_message = str(exc)
-
-            await self.repository.mark_job_failed(
-                generation_id=generation_id,
-                error_code=error_code,
-                error_message=error_message,
-            )
-            raise
-        # =========================
         # 12. Job Completed
         # =========================
 
