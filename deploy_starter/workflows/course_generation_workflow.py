@@ -35,6 +35,8 @@ class CourseGenerationWorkflow:
         self.repository = repository
         self.course_repository = course_repository
         self.stage_runner = stage_runner
+        self.multi_query_retriever = multi_query_retriever
+        self.rag_max_context_chars = rag_max_context_chars
 
     async def run(
         self,
@@ -335,11 +337,7 @@ class CourseGenerationWorkflow:
         # 9. Create Course
         # =========================
         try:
-            await self.course_repository.create_from_outline(
-                generation_id=generation_id,
-                user_id=job.user_id,
-                outline=revision_result,
-            )
+
             if job.target_course_id is None:
                 await self.course_repository.create_from_outline(
                     generation_id=generation_id,
