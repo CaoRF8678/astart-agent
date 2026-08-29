@@ -101,6 +101,7 @@ class GenerationJob(BaseModel):
 
     error_code: str | None = None
     error_message: str | None = None
+    target_course_id: str | None = None
 
 
 class ResearchTopic(BaseModel):
@@ -174,6 +175,24 @@ class ResearchResult(BaseModel):
 
     evidence: list[ResearchEvidence] = Field(
         default_factory= list
+    )
+    retrieval_queries: list[str] = Field(
+        default_factory=list
+    )
+
+    material_references: list[
+        ResearchMaterialReference
+    ] = Field(
+        default_factory=list
+    )
+    retrieval_queries: list[str] = Field(
+        default_factory=list,
+    )
+
+    material_references: list[
+        ResearchMaterialReference
+    ] = Field(
+        default_factory=list,
     )
 
 CritiqueCategory = Literal[
@@ -271,3 +290,46 @@ class CourseGenerationCancelResponse(BaseModel):
     generation_id: str
     status: GenerationStatus
     cancel_requested: bool
+
+class CourseRegenerationRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
+
+class RetrievalQueryPlan(BaseModel):
+    queries: list[str] = Field(
+        min_length=1,
+        max_length=5,
+    )
+
+class ResearchMaterialReference(BaseModel):
+    segment_id: str = Field(..., min_length=1)
+    file_id: str = Field(..., min_length=1)
+    filename: str = Field(..., min_length=1)
+    locator: dict
+    similarity_score: float = Field(
+        ge=-1.0,
+        le=1.0,
+    )
+
+
+class ResearchMaterialReference(BaseModel):
+    segment_id: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    file_id: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    filename: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    locator: dict
+
+    similarity_score: float = Field(
+        ge=-1.0,
+        le=1.0,
+    )

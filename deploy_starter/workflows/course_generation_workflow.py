@@ -29,6 +29,8 @@ class CourseGenerationWorkflow:
         repository:GenerationRepository,
         course_repository: CourseRepository,
         stage_runner,
+        multi_query_retriever,
+        rag_max_context_chars: int,
     ):
         self.repository = repository
         self.course_repository = course_repository
@@ -81,6 +83,13 @@ class CourseGenerationWorkflow:
                 research_result = await run_research(
                     runner=self.stage_runner,
                     brief=brief,
+                    course_id=job.target_course_id,
+                    multi_query_retriever=(
+                        self.multi_query_retriever
+                    ),
+                    max_context_chars= (
+                        self.rag_max_context_chars
+                    ),
                 )
                 await self.repository.mark_stage_completed(
                     generation_id = generation_id,
@@ -331,6 +340,18 @@ class CourseGenerationWorkflow:
                 user_id=job.user_id,
                 outline=revision_result,
             )
+            if job.target_course_id is None:
+                await self.course_repository.create_from_outline(
+                    generation_id=generation_id,
+                    user_id=job.user_id,
+                    outline=revision_result,
+                )
+            else:
+                await self.course_repository.replace_outline(
+                    course_id=job.target_course_id,
+                    user_id=job.user_id,
+                    outline=revision_result,
+                )
 
         except Exception as exc:
             error_code = type(exc).__name__

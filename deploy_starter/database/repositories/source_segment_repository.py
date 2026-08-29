@@ -51,6 +51,8 @@ class SourceSegmentRepository:
                 .where( #哪些数据才有资格参与查阅
                     LearningSourceModel.course_id
                     == course_id,
+                    LearningSourceModel.status
+                    == "ready",
                     SourceSegmentModel.embedding
                     .is_not(None),
                     SourceSegmentModel.embedding_model

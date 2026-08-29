@@ -1,6 +1,17 @@
 import asyncio
 
+from core.config import config
 from core.logging_config import logger
+
+from rag.retriever import Retriever
+from rag.multi_query_retriever import (
+    MultiQueryRetriever,
+)
+
+from services.embedding_service import (
+    EmbeddingService,
+)
+
 
 from database.connection import (
     AsyncSessionLocal,
@@ -9,7 +20,9 @@ from database.connection import (
 from database.repositories.generation_repository import (
     GenerationRepository,
 )
-
+from database.repositories.source_segment_repository import (
+    SourceSegmentRepository,
+)
 from database.repositories.course_repository import (
     CourseRepository,
 )
@@ -46,6 +59,37 @@ async def main() -> None:
     course_repository = CourseRepository(
         session_factory=AsyncSessionLocal,
     )
+    source_segment_repository = (
+    SourceSegmentRepository(
+        session_factory=AsyncSessionLocal,
+    )
+    )
+    embedding_service = EmbeddingService()
+    rag_min_similarity = config.get(
+    "RAG_MIN_SIMILARITY"
+    )   
+    retriever = Retriever(
+    embedding_service=embedding_service,
+    repository=source_segment_repository,
+
+    top_k=int(
+        config.get(
+            "RAG_TOP_K",
+            5,
+        )
+    ),
+
+    min_similarity=(
+        float(rag_min_similarity)
+        if rag_min_similarity is not None
+        else None
+    ),
+    )
+    multi_query_retriever = (
+    MultiQueryRetriever(
+        retriever=retriever,
+    )
+    )   
     # ==========================================
     # 2. 创建 StructuredStageRunner
     # ==========================================
@@ -76,8 +120,19 @@ async def main() -> None:
 
     workflow = CourseGenerationWorkflow(
         repository=repository,
-        course_repository= course_repository,
+        course_repository=course_repository,
         stage_runner=stage_runner,
+
+        multi_query_retriever=(
+            multi_query_retriever
+        ),
+
+        rag_max_context_chars=int(
+            config.get(
+                "RAG_MAX_CONTEXT_CHARS",
+                10000,
+            )
+        ),
     )
     # ==========================================
     # 4. 创建 Worker

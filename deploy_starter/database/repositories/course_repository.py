@@ -1,8 +1,8 @@
 #这个管正式课程
 import uuid
 
-from sqlalchemy import select
-
+from sqlalchemy import select, delete
+from datetime import datetime, timezone
 from database.models.course import CourseModel
 from database.models.course_section import CourseSectionModel
 from schemas.course import (
@@ -87,7 +87,89 @@ class CourseRepository:
                             session.add(section_model)
 
                 return course_id
-            
+
+    async def replace_outline(
+        self,
+        *,
+        course_id: str,
+        user_id: str,
+        outline: CourseOutline,
+    ) -> None:
+
+        async with self._session_factory() as session:
+            async with session.begin():
+
+                # 1. 找到并锁住要更新的 Course
+                stmt = (
+                    select(CourseModel)
+                    .where(
+                        CourseModel.course_id == course_id,
+                        CourseModel.user_id == user_id,
+                    )
+                    .with_for_update()
+                )
+
+                result = await session.execute(stmt)
+
+                course_model = (
+                    result.scalar_one_or_none()
+                )
+
+                if course_model is None:
+                    raise RuntimeError(
+                        f"Course not found: {course_id}"
+                    )
+
+                # 2. 更新 Course 的完整 Outline
+                course_model.outline = (
+                    outline.model_dump(
+                        mode="json"
+                    )
+                )
+
+                course_model.updated_at = (
+                    datetime.now(timezone.utc)
+                )
+
+                # 3. 删除这门课程原来的所有 Section
+                await session.execute(
+                    delete(CourseSectionModel)
+                    .where(
+                        CourseSectionModel.course_id
+                        == course_id
+                    )
+                )
+
+                # 4. 根据新的 Outline 重新创建 Section
+                for module_order, module in enumerate(
+                    outline.modules
+                ):
+                    for chapter_order, chapter in enumerate(
+                        module.chapters
+                    ):
+                        for section_order, section in enumerate(
+                            chapter.sections
+                        ):
+
+                            section_model = CourseSectionModel(
+                                section_id=f"sec_{uuid.uuid4()}",
+                                course_id=course_id,
+
+                                module_title=module.title,
+                                chapter_title=chapter.title,
+                                title=section.title,
+
+                                module_order=module_order,
+                                chapter_order=chapter_order,
+                                section_order=section_order,
+
+                                estimated_minutes=(
+                                    section.estimated_minutes
+                                ),
+                            )
+
+                            session.add(section_model)
+
     async def get_course_id_by_generation(
         self,
         *,
