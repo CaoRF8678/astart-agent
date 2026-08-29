@@ -136,9 +136,12 @@ class CourseGenerationService:
         )
         course_id = None
 
-        if job.status == "completed":
-            course_id = (
-                await self.course_repository
+        if job.target_course_id is not None:
+            course_id = job.target_course_id
+
+        elif job.status == "completed":
+            course_id = await (
+                self.course_repository
                 .get_course_id_by_generation(
                     generation_id=generation_id,
                 )
