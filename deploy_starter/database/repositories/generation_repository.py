@@ -5,14 +5,22 @@ from sqlalchemy import select
 from schemas.intake import LearningBriefContent
 from database.models.generation_job import GenerationJobModel
 from database.models.generation_stage import GenerationStageModel
-
+from database.models.generation_section_result import (
+    GenerationSectionResultModel,
+)
 from schemas.generation import (
     GenerationJob,
     GenerationStage,
     ResearchResult,
     CritiqueResult,
+    GenerationSectionResult,
+    SectionContentResult,
 )
-from schemas.course import CourseOutline
+from schemas.course import (
+    CourseOutline,
+    CourseSectionSourceReference,
+)
+
 
 CancelResult = Literal[
     "not_found",
@@ -27,6 +35,8 @@ STAGE_ORDER = {
     "outline": 1,
     "critique": 2,
     "revision": 3,
+    "draft": 4,
+    "final_check": 5,
 }
 STAGE_SNAPSHOT_FIELDS = {
     "research": "research_result",
@@ -65,6 +75,8 @@ class GenerationRepository:
                     "outline",
                     "critique",
                     "revision",
+                    "draft",
+                    "final_check",
                 ):
                     stage = GenerationStageModel(
                         generation_id = generation_id,
@@ -387,63 +399,84 @@ class GenerationRepository:
     async def mark_stage_completed(
         self,
         *,
-        generation_id:str,
-        stage:str,
-        snapshot:dict,
+        generation_id: str,
+        stage: str,
+        snapshot: dict | None = None,
     ):
         snapshot_field = STAGE_SNAPSHOT_FIELDS.get(stage)
-        if snapshot_field is None:
+
+        if (
+            snapshot_field is None
+            and stage not in {"draft", "final_check"}
+        ):
             raise ValueError(
                 f"Unsupported stage: {stage}"
             )
+
+        if (
+            snapshot_field is not None
+            and snapshot is None
+        ):
+            raise ValueError(
+                f"Snapshot is required for stage: {stage}"
+            )
+
         async with self._session_factory() as session:
             async with session.begin():
-
-                #1、锁stage
                 stage_stmt = (
                     select(GenerationStageModel)
                     .where(
-                        GenerationStageModel.generation_id == generation_id,
+                        GenerationStageModel.generation_id
+                        == generation_id,
                         GenerationStageModel.stage == stage,
                     )
                     .with_for_update()
                 )
-                stage_result = await session.execute(stage_stmt)
-                stage_model = stage_result.scalar_one_or_none()
+                stage_result = await session.execute(
+                    stage_stmt
+                )
+                stage_model = (
+                    stage_result.scalar_one_or_none()
+                )
+
                 if stage_model is None:
                     raise RuntimeError(
                         f"Generation stage not found: "
                         f"{generation_id}/{stage}"
                     )
-                #2、锁job
+
                 job_stmt = (
                     select(GenerationJobModel)
                     .where(
-                        GenerationJobModel.generation_id == generation_id,
+                        GenerationJobModel.generation_id
+                        == generation_id
                     )
                     .with_for_update()
                 )
-                job_result = await session.execute(job_stmt)
+                job_result = await session.execute(
+                    job_stmt
+                )
                 job_model = job_result.scalar_one_or_none()
 
                 if job_model is None:
                     raise RuntimeError(
-                        f"Generation job not found: {generation_id}"
+                        f"Generation job not found: "
+                        f"{generation_id}"
                     )
+
                 now = datetime.now(timezone.utc)
 
-                #3、保存snapshot
-                setattr(
-                    job_model,
-                    snapshot_field,
-                    snapshot,
-                )
+                if snapshot_field is not None:
+                    setattr(
+                        job_model,
+                        snapshot_field,
+                        snapshot,
+                    )
 
                 stage_model.status = "completed"
                 stage_model.finished_at = now
                 stage_model.error_code = None
                 stage_model.error_message = None
-
                 job_model.updated_at = now
 
 
@@ -616,3 +649,163 @@ class GenerationRepository:
                 job.finished_at = now
                 job.updated_at = now
                 job.worker_id = None
+
+    async def mark_stage_cancelled(
+        self,
+        *,
+        generation_id: str,
+        stage: str,
+    ) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                stmt = (
+                    select(GenerationStageModel)
+                    .where(
+                        GenerationStageModel.generation_id
+                        == generation_id,
+                        GenerationStageModel.stage == stage,
+                    )
+                    .with_for_update()
+                )
+                result = await session.execute(stmt)
+                stage_model = result.scalar_one_or_none()
+
+                if stage_model is None:
+                    raise RuntimeError(
+                        f"Generation stage not found: "
+                        f"{generation_id}/{stage}"
+                    )
+
+                now = datetime.now(timezone.utc)
+                stage_model.status = "cancelled"
+                stage_model.finished_at = now
+                stage_model.error_code = None
+                stage_model.error_message = None
+
+    async def list_section_results(
+        self,
+        *,
+        generation_id: str,
+    ) -> list[GenerationSectionResult]:
+        async with self._session_factory() as session:
+            stmt = (
+                select(GenerationSectionResultModel)
+                .where(
+                    GenerationSectionResultModel.generation_id
+                    == generation_id
+                )
+                .order_by(
+                    GenerationSectionResultModel.module_order,
+                    GenerationSectionResultModel.chapter_order,
+                    GenerationSectionResultModel.section_order,
+                )
+            )
+            result = await session.execute(stmt)
+            models = list(result.scalars().all())
+
+        return [
+            self._to_section_result(model)
+            for model in models
+        ]
+
+    @staticmethod
+    def _to_section_result(
+        model: GenerationSectionResultModel,
+    ) -> GenerationSectionResult:
+        return GenerationSectionResult(
+            generation_id=model.generation_id,
+            module_order=model.module_order,
+            chapter_order=model.chapter_order,
+            section_order=model.section_order,
+            retrieval_queries=list(
+                model.retrieval_queries or []
+            ),
+            retrieved_context=(
+                model.retrieved_context or ""
+            ),
+            retrieved_references=[
+                CourseSectionSourceReference.model_validate(
+                    item
+                )
+                for item in (
+                    model.retrieved_references or []
+                )
+            ],
+            draft_content=model.draft_content,
+            draft_cited_source_numbers=list(
+                model.draft_cited_source_numbers or []
+            ),
+            final_content=model.final_content,
+            final_references=[
+                CourseSectionSourceReference.model_validate(
+                    item
+                )
+                for item in (
+                    model.final_references or []
+                )
+            ],
+        )
+
+
+    async def save_section_draft(
+        self,
+        *,
+        generation_id: str,
+        module_order: int,
+        chapter_order: int,
+        section_order: int,
+        retrieval_queries: list[str],
+        retrieved_context: str,
+        retrieved_references: list[
+            CourseSectionSourceReference
+        ],
+        draft_result: SectionContentResult,
+    ) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                stmt = (
+                    select(GenerationSectionResultModel)
+                    .where(
+                        GenerationSectionResultModel.generation_id
+                        == generation_id,
+                        GenerationSectionResultModel.module_order
+                        == module_order,
+                        GenerationSectionResultModel.chapter_order
+                        == chapter_order,
+                        GenerationSectionResultModel.section_order
+                        == section_order,
+                    )
+                    .with_for_update()
+                )
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+
+                if model is None:
+                    model = GenerationSectionResultModel(
+                        generation_id=generation_id,
+                        module_order=module_order,
+                        chapter_order=chapter_order,
+                        section_order=section_order,
+                    )
+                    session.add(model)
+
+                model.retrieval_queries = list(
+                    retrieval_queries
+                )
+                model.retrieved_context = retrieved_context
+                model.retrieved_references = [
+                    item.model_dump(mode="json")
+                    for item in retrieved_references
+                ]
+                model.draft_content = draft_result.content
+                model.draft_cited_source_numbers = list(
+                    draft_result.cited_source_numbers
+                )
+
+                # 如果未来真的重写 Draft，旧 Final 不能继续有效
+                model.final_content = None
+                model.final_references = []
+
+                model.updated_at = datetime.now(
+                    timezone.utc
+                )
