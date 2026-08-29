@@ -185,15 +185,8 @@ class ResearchResult(BaseModel):
     ] = Field(
         default_factory=list
     )
-    retrieval_queries: list[str] = Field(
-        default_factory=list,
-    )
 
-    material_references: list[
-        ResearchMaterialReference
-    ] = Field(
-        default_factory=list,
-    )
+
 
 CritiqueCategory = Literal[
     "coverage",
