@@ -1,5 +1,16 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any
+
+class CourseSectionSourceReference(BaseModel):
+    segment_id: str = Field(..., min_length=1)
+    file_id: str = Field(..., min_length=1)
+    filename: str = Field(..., min_length=1)
+    locator: dict[str, Any]
+    similarity_score: float = Field(
+        ge=-1.0,
+        le=1.0,
+    )
 
 class SectionOutline(BaseModel):
     title: str
@@ -37,6 +48,11 @@ class CourseSection(BaseModel):
 
     estimated_minutes: int = Field(gt = 0)
 
+    content: str | None = None
+    source_references: list[
+        CourseSectionSourceReference
+    ] = Field(default_factory=list)
+
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +63,9 @@ class Course(BaseModel):
 
     outline: CourseOutline
 
+    sections: list[CourseSection] = Field(
+    default_factory=list
+    )
     created_at: datetime
     updated_at: datetime
 

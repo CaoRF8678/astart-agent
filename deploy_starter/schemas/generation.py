@@ -4,7 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from schemas.intake import LearningBriefContent
-from schemas.course import CourseOutline
+from schemas.course import (
+    CourseOutline,
+    CourseSectionSourceReference,
+)
 
 GenerationStatus  = Literal[
     "pending",
@@ -326,3 +329,46 @@ class ResearchMaterialReference(BaseModel):
         ge=-1.0,
         le=1.0,
     )
+
+class SectionGenerationTarget(BaseModel):
+    module_title: str = Field(..., min_length=1)
+    chapter_title: str = Field(..., min_length=1)
+    chapter_learning_objectives: list[str]
+    section_title: str = Field(..., min_length=1)
+
+    module_order: int = Field(ge=0)
+    chapter_order: int = Field(ge=0)
+    section_order: int = Field(ge=0)
+
+    estimated_minutes: int = Field(gt=0)
+
+class SectionContentResult(BaseModel):
+    content: str = Field(..., min_length=1)
+    cited_source_numbers: list[int] = Field(
+        default_factory=list
+    )
+
+class GenerationSectionResult(BaseModel):
+    generation_id: str = Field(..., min_length=1)
+
+    module_order: int = Field(ge=0)
+    chapter_order: int = Field(ge=0)
+    section_order: int = Field(ge=0)
+
+    retrieval_queries: list[str] = Field(
+        default_factory=list
+    )
+    retrieved_context: str = ""
+    retrieved_references: list[
+        CourseSectionSourceReference
+    ] = Field(default_factory=list)
+
+    draft_content: str | None = None
+    draft_cited_source_numbers: list[int] = Field(
+        default_factory=list
+    )
+
+    final_content: str | None = None
+    final_references: list[
+        CourseSectionSourceReference
+    ] = Field(default_factory=list)
