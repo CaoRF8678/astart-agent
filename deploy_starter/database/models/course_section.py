@@ -11,7 +11,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-
+from sqlalchemy.dialects.postgresql import JSONB
 from database.base import Base
 
 
@@ -93,6 +93,16 @@ class CourseSectionModel(Base):
         nullable=False,
     )
 
+    content: Mapped[str | None] = mapped_column(
+    Text,
+    nullable=True,
+    )
+
+    source_references: Mapped[list] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
